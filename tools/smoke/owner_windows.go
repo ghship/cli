@@ -8,7 +8,7 @@ import (
 )
 
 func securityOwner(path string, info os.FileInfo) (string, error) {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
 		return "", err
 	}
@@ -16,5 +16,5 @@ func securityOwner(path string, info os.FileInfo) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return owner.String() + "|" + sd.String(), nil
+	return owner.String(), nil
 }
