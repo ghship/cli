@@ -29,25 +29,38 @@ func buildFixture(pkg, tmp string) (string, string, error) {
 	if err = os.MkdirAll(overlayDir, 0755); err != nil {
 		return "", "", err
 	}
-	replacements := map[string]string{}
-	for _, file := range []struct{ name, old, new string }{
-		{"assets.go", `const Version = "` + assets.Version + `"`, `const Version = "` + oldVersion + `"`},
-		{"SKILL.md", `version: "` + assets.Version + `"`, `version: "` + oldVersion + `"`},
-	} {
-		src := filepath.Join(root, file.name)
-		b, e := os.ReadFile(src)
-		if e != nil {
-			return "", "", e
-		}
-		if strings.Count(string(b), file.old) != 1 {
-			return "", "", fmt.Errorf("unexpected fixture source: %s", file.name)
-		}
-		dst := filepath.Join(overlayDir, file.name)
-		if e = os.WriteFile(dst, []byte(strings.Replace(string(b), file.old, file.new, 1)), 0644); e != nil {
-			return "", "", e
-		}
-		replacements[src] = dst
+	// Only the Go source is overlaid: older Go toolchains may not apply
+	// file overlays to go:embed. The fixture wraps ReadFile so both CLI and
+	// SKILL.md report the same synthetic version without editing the checkout.
+	src := filepath.Join(root, "assets.go")
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return "", "", err
 	}
+	text := string(b)
+	oldConst := `const Version = "` + assets.Version + `"`
+	for _, marker := range []string{`import "embed"`, `var Skill embed.FS`, oldConst} {
+		if strings.Count(text, marker) != 1 {
+			return "", "", fmt.Errorf("unexpected fixture source marker")
+		}
+	}
+	text = strings.Replace(text, `import "embed"`, `import ("embed"; "io/fs"; "strings")`, 1)
+	fixture := `var originalSkill embed.FS
+	type fixtureSkill struct{}
+	func (fixtureSkill) Open(name string) (fs.File, error) { return originalSkill.Open(name) }
+	func (fixtureSkill) ReadFile(name string) ([]byte, error) {
+		b, e := originalSkill.ReadFile(name)
+		if e == nil && name == "SKILL.md" { b = []byte(strings.Replace(string(b), "version: \"` + assets.Version + `\"", "version: \"` + oldVersion + `\"", 1)) }
+		return b, e
+	}
+	var Skill fixtureSkill`
+	text = strings.Replace(text, `var Skill embed.FS`, fixture, 1)
+	text = strings.Replace(text, oldConst, `const Version = "`+oldVersion+`"`, 1)
+	dst := filepath.Join(overlayDir, "assets.go")
+	if err = os.WriteFile(dst, []byte(text), 0644); err != nil {
+		return "", "", err
+	}
+	replacements := map[string]string{src: dst}
 	overlay, err := json.Marshal(struct{ Replace map[string]string }{replacements})
 	if err != nil {
 		return "", "", err
@@ -91,7 +104,7 @@ func buildFixture(pkg, tmp string) (string, string, error) {
 			return "", "", e
 		}
 	}
-	b, err := os.ReadFile(binary)
+	b, err = os.ReadFile(binary)
 	if err != nil {
 		return "", "", err
 	}
