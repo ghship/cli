@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	"golang.org/x/sys/windows"
 )
@@ -43,7 +44,8 @@ func withDeniedDirectoryCreate(parent string, operation func() error) (result er
 			var restored *windows.SECURITY_DESCRIPTOR
 			restored, err = windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 			if err == nil && restored.String() != originalText {
-				err = errors.New("restored test ACL differs from original")
+				redact := regexp.MustCompile(`S-\d(?:-\d+)+`)
+				err = fmt.Errorf("restored test ACL differs: original %s; restored %s", redact.ReplaceAllString(originalText, "SID"), redact.ReplaceAllString(restored.String(), "SID"))
 			}
 		}
 		if err != nil {
