@@ -125,6 +125,8 @@ func run() error {
 	preserved := map[string]string{
 		filepath.Join(configRoot, "accounts", "example.invalid", "user.json"): `{"schemaVersion":1,"host":"example.invalid","login":"user","secret":"ZmFrZQ=="}`,
 		filepath.Join(projectDir, ".ghship", "skill.md"):                      "---\nmode: supplement\n---\n\nuser-owned data\n",
+		filepath.Join(configRoot, "user-settings.json"):                       `{"preference":"keep"}`,
+		filepath.Join(home, "user-file.txt"):                                  "keep user file\n",
 	}
 	for p, content := range preserved {
 		if e = os.MkdirAll(filepath.Dir(p), 0700); e != nil {
@@ -159,6 +161,14 @@ func run() error {
 	standaloneDir := filepath.Join(home, ".local", "bin")
 	if runtime.GOOS == "windows" {
 		standaloneDir = filepath.Join(home, "local", "Programs", "ghship")
+	}
+	checkUninstalled := func(executable string) error {
+		for _, path := range []string{executable, skillDir} {
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				return fmt.Errorf("managed installation remains or cannot be checked: %s", filepath.Base(path))
+			}
+		}
+		return checkPreserved()
 	}
 	protected := []string{skillDir, prefix, configRoot, projectDir, standaloneDir}
 	refused := func(operation func() ([]byte, error), message string) error {
@@ -303,6 +313,11 @@ func run() error {
 	}); e != nil {
 		return fmt.Errorf("npm conflict: %w", e)
 	}
+	if e = testSkillConflicts(func() ([]byte, error) {
+		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--package-source", tarball, "--user-only", "--json")
+	}); e != nil {
+		return fmt.Errorf("npm reinstall conflict: %w", e)
+	}
 	// A different failure, even with exit 1, must not pass as a downgrade.
 	beforeUnrelated, e := snapshotTrees(protected...)
 	if e != nil {
@@ -322,6 +337,12 @@ func run() error {
 		return e
 	}
 	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = checkProject(candidateBinary); e != nil {
 		return e
 	}
 	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e != nil {
@@ -360,6 +381,9 @@ func run() error {
 	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
 		return e
 	}
+	if e = checkUninstalled(launcher); e != nil {
+		return e
+	}
 	fmt.Println("PASS npm synthetic baseline upgrade and downgrade refusal")
 	for i := 0; i < 2; i++ {
 		b, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--package-source", tarball, "--user-only", "--json")
@@ -368,6 +392,12 @@ func run() error {
 		}
 		fmt.Printf("PASS npx install: %s", b)
 		if e = verifyInstalledSkill(home, assets.Version); e != nil {
+			return e
+		}
+		if e = checkNpmVersion(assets.Version); e != nil {
+			return e
+		}
+		if e = checkProject(currentBinary); e != nil {
 			return e
 		}
 	}
@@ -390,6 +420,11 @@ func run() error {
 			if e = checkNpmVersion(assets.Version); e != nil {
 				return e
 			}
+			if e = checkProject(currentBinary); e != nil {
+				return e
+			}
+		} else if e = checkUninstalled(launcher); e != nil {
+			return e
 		}
 	}
 	if _, e = command("node", filepath.Join(pkg, "run.cjs"), "unknown-command"); e == nil {
@@ -424,11 +459,20 @@ func run() error {
 	if e = checkStandaloneVersion("0.0.1"); e != nil {
 		return e
 	}
+	if e = checkProject(installedBinary); e != nil {
+		return e
+	}
 	for i := 0; i < 2; i++ {
 		if _, e = command(binary, "update", "--standalone", "--user-only", "--json"); e != nil {
 			return e
 		}
 		if e = verifyInstalledSkill(home, assets.Version); e != nil {
+			return e
+		}
+		if e = checkStandaloneVersion(assets.Version); e != nil {
+			return e
+		}
+		if e = checkProject(installedBinary); e != nil {
 			return e
 		}
 	}
@@ -439,6 +483,11 @@ func run() error {
 		return command(binary, "update", "--standalone", "--user-only", "--json")
 	}); e != nil {
 		return fmt.Errorf("standalone conflict: %w", e)
+	}
+	if e = testSkillConflicts(func() ([]byte, error) {
+		return command(binary, "install", "--standalone", "--user-only", "--json")
+	}); e != nil {
+		return fmt.Errorf("standalone reinstall conflict: %w", e)
 	}
 	// Refuse a non-writable staging parent on Unix; Windows ACLs need a
 	// separate controlled scenario and must not be inferred from chmod.
@@ -488,8 +537,11 @@ func run() error {
 	if _, e = command(binary, "uninstall", "--standalone", "--user-only", "--json"); e != nil {
 		return e
 	}
+	if e = checkUninstalled(installedBinary); e != nil {
+		return e
+	}
 	fmt.Println("PASS standalone synthetic baseline upgrade and downgrade refusal")
-	for _, action := range []string{"install", "update", "uninstall"} {
+	for _, action := range []string{"install", "install", "update", "uninstall"} {
 		b, e = command(binary, action, "--standalone", "--user-only", "--json")
 		if e != nil {
 			return e
@@ -502,6 +554,11 @@ func run() error {
 			if e = checkStandaloneVersion(assets.Version); e != nil {
 				return e
 			}
+			if e = checkProject(installedBinary); e != nil {
+				return e
+			}
+		} else if e = checkUninstalled(installedBinary); e != nil {
+			return e
 		}
 	}
 	skill := filepath.Join(home, ".agents", "skills", "ghship")
