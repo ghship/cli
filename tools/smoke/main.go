@@ -313,6 +313,12 @@ func run() error {
 	if e = checkProject(currentBinary); e != nil {
 		return e
 	}
+	if e = projectLifecycle(tmp, home, projectDir, currentBinary, env); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
 	if e = refused(func() ([]byte, error) {
 		return npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "update", "--package-source", fixtureTar, "--json")
 	}, "downgrade refused"); e != nil {
