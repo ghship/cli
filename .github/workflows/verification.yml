@@ -57,7 +57,7 @@ jobs:
         with:
           name: ${{ needs.package.outputs.artifact }}
           path: dist/candidate
-      - name: Extract and test the exact shared candidate
+      - name: Verify and extract the exact shared candidate
         shell: bash
         env:
           CANDIDATE_NAME: ${{ needs.package.outputs.filename }}
@@ -66,7 +66,8 @@ jobs:
           node -e "const c=require('node:crypto'),f=require('node:fs');const h=c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex');if(h!==process.env.CANDIDATE_SHA256)throw Error('candidate SHA-256 mismatch')" "dist/candidate/$CANDIDATE_NAME"
           mkdir -p dist/extracted
           tar -xzf "dist/candidate/$CANDIDATE_NAME" -C dist/extracted
-          go run ./tools/smoke ./dist/extracted/package "dist/candidate/$CANDIDATE_NAME" "$CANDIDATE_SHA256"
+      - name: Test the exact shared candidate
+        run: go run ./tools/smoke ./dist/extracted/package "dist/candidate/${{ needs.package.outputs.filename }}" "${{ needs.package.outputs.sha256 }}"
   package:
     name: npm package
     runs-on: ubuntu-24.04
