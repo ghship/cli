@@ -47,13 +47,7 @@ func run() error {
 	}
 	env = append(env, "HOME="+home, "USERPROFILE="+home, "LOCALAPPDATA="+filepath.Join(home, "local"), "npm_config_cache="+filepath.Join(tmp, "cache"), "APPDATA="+filepath.Join(home, "AppData"), "npm_config_prefix="+filepath.Join(tmp, "global"))
 	command := func(name string, args ...string) ([]byte, error) {
-		c := exec.Command(name, args...)
-		c.Env = env
-		b, e := c.CombinedOutput()
-		if e != nil {
-			return b, fmt.Errorf("%s %v failed: %w: %s", name, args, e, b)
-		}
-		return b, nil
+		return runCommand(env, name, args...)
 	}
 	npm := func(args ...string) ([]byte, error) {
 		if runtime.GOOS != "windows" {
@@ -532,4 +526,20 @@ func verifyInstalledSkill(home, expectedVersion string) error {
 	}
 	fmt.Println("PASS installed skill: public files match source; internal files excluded; version matches")
 	return nil
+}
+
+func runCommand(env []string, name string, args ...string) ([]byte, error) {
+	c := exec.Command(name, args...)
+	c.Env = env
+	var stdout, stderr bytes.Buffer
+	c.Stdout, c.Stderr = &stdout, &stderr
+	err := c.Run()
+	if err != nil {
+		output := append(stdout.Bytes(), stderr.Bytes()...)
+		return output, fmt.Errorf("%s %v failed: %w: %s", name, args, err, output)
+	}
+	if stderr.Len() != 0 {
+		_, _ = os.Stderr.Write(stderr.Bytes())
+	}
+	return stdout.Bytes(), nil
 }
