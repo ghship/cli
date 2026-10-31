@@ -12,7 +12,7 @@ test('distribution README contains project and Go binary license notices', () =>
   const fs = require('node:fs');
   const path = require('node:path');
   const readme = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
-  const projectLicense = fs.readFileSync(path.join(__dirname, '..', 'LICENSE'), 'utf8').trim();
+  const projectLicense = fs.readFileSync(path.join(__dirname, '..', 'LICENSE'), 'utf8').replace(/\r\n/g, '\n').trim();
   assert.ok(readme.includes(projectLicense), 'project MIT license must be included');
   assert.match(readme, /Copyright \(c\) 2009 The Go Authors\. All rights reserved\./);
   assert.match(readme, /Neither the name of Google Inc\. nor the names of its/);
