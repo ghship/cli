@@ -19,6 +19,14 @@ jobs:
             runner: ubuntu-24.04
           - platform: linux-arm64
             runner: ubuntu-24.04-arm
+          - platform: darwin-amd64
+            runner: macos-15-intel
+          - platform: darwin-arm64
+            runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2025
+          - platform: windows-arm64
+            runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -30,7 +38,13 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
+      - name: Verify native runtime architecture
+        shell: bash
+        run: |
+          test "$(go env GOHOSTOS)-$(go env GOHOSTARCH)" = "${{ matrix.platform }}"
+          node -e "const m={x64:'amd64',arm64:'arm64'};const o={win32:'windows',darwin:'darwin',linux:'linux'};if(o[process.platform]+'-'+m[process.arch]!==process.argv[1])process.exit(1)" "${{ matrix.platform }}"
       - run: test -z "$(gofmt -l .)"
+        shell: bash
       - run: go vet ./...
       - run: go test ./... -count=1
       - run: node --test npm/test.cjs

@@ -84,7 +84,58 @@ func run() error {
 		}
 	}
 	tarball := filepath.Join(tmp, packs[0].Filename)
+	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp)
+	if e != nil {
+		return e
+	}
+	fixturePacksJSON, e := npm("pack", fixtureDir, "--json", "--pack-destination", fixtureDir)
+	if e != nil {
+		return e
+	}
+	var fixturePacks []struct{ Filename string }
+	if e = json.Unmarshal(fixturePacksJSON, &fixturePacks); e != nil || len(fixturePacks) != 1 {
+		return fmt.Errorf("invalid synthetic baseline pack")
+	}
+	fixtureTar := filepath.Join(fixtureDir, fixturePacks[0].Filename)
+	fixtureVersion, e := command(fixtureBinary, "version")
+	if e != nil || strings.TrimSpace(string(fixtureVersion)) != "0.0.1" {
+		return fmt.Errorf("synthetic baseline CLI version mismatch")
+	}
+	// Non-secret sentinels in the real configuration and project layouts.
+	configRoot := filepath.Join(home, ".config", "ghship")
+	if runtime.GOOS == "windows" {
+		configRoot = filepath.Join(home, "AppData", "ghship")
+	}
+	preserved := []string{filepath.Join(configRoot, "accounts", "example.invalid", "user.json"), filepath.Join(tmp, "project", ".ghship", "skill.md")}
+	for _, p := range preserved {
+		if e = os.MkdirAll(filepath.Dir(p), 0700); e != nil {
+			return e
+		}
+		if e = os.WriteFile(p, []byte("user-owned data"), 0600); e != nil {
+			return e
+		}
+	}
+	checkPreserved := func() error {
+		for _, p := range preserved {
+			b, err := os.ReadFile(p)
+			if err != nil || string(b) != "user-owned data" {
+				return fmt.Errorf("user data was changed")
+			}
+		}
+		return nil
+	}
 	prefix := filepath.Join(tmp, "global")
+	launcher := filepath.Join(prefix, "lib", "node_modules", "@ghship", "cli", "run.cjs")
+	if runtime.GOOS == "windows" {
+		launcher = filepath.Join(prefix, "node_modules", "@ghship", "cli", "run.cjs")
+	}
+	checkNpmVersion := func(expected string) error {
+		b, err := command("node", launcher, "version")
+		if err != nil || strings.TrimSpace(string(b)) != expected {
+			return fmt.Errorf("installed npm CLI version mismatch: %s", b)
+		}
+		return nil
+	}
 	foreign := filepath.Join(tmp, "foreign")
 	if e = os.Mkdir(foreign, 0755); e != nil {
 		return e
@@ -117,19 +168,86 @@ func run() error {
 		return e
 	}
 	fmt.Println("PASS foreign same-name/version global package preserved and rejected")
+	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "install", "--package-source", fixtureTar, "--user-only", "--json"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, "0.0.1"); e != nil {
+		return e
+	}
+	if e = checkNpmVersion("0.0.1"); e != nil {
+		return e
+	}
+	// Unknown user content and modified managed content must prevent update.
+	unknown := filepath.Join(home, ".agents", "skills", "ghship", "custom.txt")
+	if e = os.WriteFile(unknown, []byte("do not delete"), 0600); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e == nil {
+		return fmt.Errorf("update accepted unknown content")
+	}
+	if b, err := os.ReadFile(unknown); err != nil || string(b) != "do not delete" {
+		return fmt.Errorf("unknown content not preserved")
+	}
+	if e = os.Remove(unknown); e != nil {
+		return e
+	}
+	managedSkill := filepath.Join(home, ".agents", "skills", "ghship", "SKILL.md")
+	originalSkill, e := os.ReadFile(managedSkill)
+	if e != nil {
+		return e
+	}
+	if e = os.WriteFile(managedSkill, []byte("modified by user"), 0600); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e == nil {
+		return fmt.Errorf("update accepted modified skill")
+	}
+	if b, err := os.ReadFile(managedSkill); err != nil || string(b) != "modified by user" {
+		return fmt.Errorf("modified skill not preserved")
+	}
+	if e = os.WriteFile(managedSkill, originalSkill, 0644); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "update", "--package-source", fixtureTar, "--json"); e == nil {
+		return fmt.Errorf("npm downgrade accepted")
+	}
+	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+		return e
+	}
+	fmt.Println("PASS npm synthetic baseline upgrade and downgrade refusal")
 	for i := 0; i < 2; i++ {
 		b, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--package-source", tarball, "--user-only", "--json")
 		if e != nil {
 			return e
 		}
 		fmt.Printf("PASS npx install: %s", b)
-		if e = verifyInstalledSkill(home); e != nil {
+		if e = verifyInstalledSkill(home, assets.Version); e != nil {
 			return e
 		}
-	}
-	launcher := filepath.Join(prefix, "lib", "node_modules", "@ghship", "cli", "run.cjs")
-	if runtime.GOOS == "windows" {
-		launcher = filepath.Join(prefix, "node_modules", "@ghship", "cli", "run.cjs")
 	}
 	invoke := func(a ...string) ([]byte, error) { return command("node", append([]string{launcher}, a...)...) }
 	b, e = invoke("version")
@@ -144,7 +262,7 @@ func run() error {
 		}
 		fmt.Printf("PASS npx %s: %s", action, b)
 		if action == "update" {
-			if e = verifyInstalledSkill(home); e != nil {
+			if e = verifyInstalledSkill(home, assets.Version); e != nil {
 				return e
 			}
 		}
@@ -161,6 +279,53 @@ func run() error {
 		name += ".exe"
 	}
 	binary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, name)
+	installedBinary := filepath.Join(home, ".local", "bin", name)
+	if runtime.GOOS == "windows" {
+		installedBinary = filepath.Join(home, "local", "Programs", "ghship", name)
+	}
+	checkStandaloneVersion := func(expected string) error {
+		b, err := command(installedBinary, "version")
+		if err != nil || strings.TrimSpace(string(b)) != expected {
+			return fmt.Errorf("standalone CLI version mismatch: %s", b)
+		}
+		return nil
+	}
+	if _, e = command(fixtureBinary, "install", "--standalone", "--user-only", "--json"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, "0.0.1"); e != nil {
+		return e
+	}
+	if e = checkStandaloneVersion("0.0.1"); e != nil {
+		return e
+	}
+	for i := 0; i < 2; i++ {
+		if _, e = command(binary, "update", "--standalone", "--user-only", "--json"); e != nil {
+			return e
+		}
+		if e = verifyInstalledSkill(home, assets.Version); e != nil {
+			return e
+		}
+	}
+	if e = checkStandaloneVersion(assets.Version); e != nil {
+		return e
+	}
+	if _, e = command(fixtureBinary, "update", "--standalone", "--user-only", "--json"); e == nil {
+		return fmt.Errorf("standalone downgrade accepted")
+	}
+	if e = checkStandaloneVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if _, e = command(binary, "uninstall", "--standalone", "--user-only", "--json"); e != nil {
+		return e
+	}
+	fmt.Println("PASS standalone synthetic baseline upgrade and downgrade refusal")
 	for _, action := range []string{"install", "update", "uninstall"} {
 		b, e = command(binary, action, "--standalone", "--user-only", "--json")
 		if e != nil {
@@ -168,7 +333,7 @@ func run() error {
 		}
 		fmt.Printf("PASS standalone %s: %s", action, b)
 		if action != "uninstall" {
-			if e = verifyInstalledSkill(home); e != nil {
+			if e = verifyInstalledSkill(home, assets.Version); e != nil {
 				return e
 			}
 		}
@@ -177,17 +342,23 @@ func run() error {
 	if _, e = os.Stat(skill); !os.IsNotExist(e) {
 		return fmt.Errorf("skill remains after uninstall")
 	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
 	fmt.Println("PASS real npm tarball and standalone lifecycle; temporary home only")
 	return nil
 }
 
-func verifyInstalledSkill(home string) error {
+func verifyInstalledSkill(home, expectedVersion string) error {
 	dir := filepath.Join(home, ".agents", "skills", "ghship")
 	public := map[string]bool{"SKILL.md": true, "references/cli.md": true, "references/pipeline.md": true, "references/setup.md": true, "references/workflow.md": true}
 	for name := range public {
 		want, e := os.ReadFile(filepath.FromSlash(name))
 		if e != nil {
 			return e
+		}
+		if name == "SKILL.md" && expectedVersion != assets.Version {
+			want = bytes.Replace(want, []byte(`version: "`+assets.Version+`"`), []byte(`version: "`+expectedVersion+`"`), 1)
 		}
 		got, e := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 		if e != nil {
@@ -223,7 +394,7 @@ func verifyInstalledSkill(home string) error {
 	if e = json.Unmarshal(b, &metadata); e != nil {
 		return e
 	}
-	if metadata.Version != assets.Version {
+	if metadata.Version != expectedVersion {
 		return fmt.Errorf("installed skill version differs")
 	}
 	fmt.Println("PASS installed skill: public files match source; internal files excluded; version matches")
