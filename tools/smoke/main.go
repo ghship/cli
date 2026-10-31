@@ -101,28 +101,45 @@ func run() error {
 	if e != nil || strings.TrimSpace(string(fixtureVersion)) != "0.0.1" {
 		return fmt.Errorf("synthetic baseline CLI version mismatch")
 	}
-	// Non-secret sentinels in the real configuration and project layouts.
+	// A throwaway Git project and non-secret account data use real product paths.
+	projectDir := filepath.Join(tmp, "project")
+	if e = os.MkdirAll(projectDir, 0700); e != nil {
+		return e
+	}
+	if _, e = command("git", "init", "--quiet", projectDir); e != nil {
+		return e
+	}
 	configRoot := filepath.Join(home, ".config", "ghship")
 	if runtime.GOOS == "windows" {
 		configRoot = filepath.Join(home, "AppData", "ghship")
 	}
-	preserved := []string{filepath.Join(configRoot, "accounts", "example.invalid", "user.json"), filepath.Join(tmp, "project", ".ghship", "skill.md")}
-	for _, p := range preserved {
+	preserved := map[string]string{
+		filepath.Join(configRoot, "accounts", "example.invalid", "user.json"): `{"schemaVersion":1,"host":"example.invalid","login":"user","secret":"ZmFrZQ=="}`,
+		filepath.Join(projectDir, ".ghship", "skill.md"):                      "---\nmode: supplement\n---\n\nuser-owned data\n",
+	}
+	for p, content := range preserved {
 		if e = os.MkdirAll(filepath.Dir(p), 0700); e != nil {
 			return e
 		}
-		if e = os.WriteFile(p, []byte("user-owned data"), 0600); e != nil {
+		if e = os.WriteFile(p, []byte(content), 0600); e != nil {
 			return e
 		}
 	}
 	checkPreserved := func() error {
-		for _, p := range preserved {
+		for p, content := range preserved {
 			b, err := os.ReadFile(p)
-			if err != nil || string(b) != "user-owned data" {
+			if err != nil || string(b) != content {
 				return fmt.Errorf("user data was changed")
 			}
 		}
 		return nil
+	}
+	checkProject := func(executable string) error {
+		b, err := command(executable, "project", "skill", "--show", "--project", projectDir, "--json")
+		if err != nil || !strings.Contains(string(b), "supplement") {
+			return fmt.Errorf("project customization inaccessible: %s", b)
+		}
+		return checkPreserved()
 	}
 	prefix := filepath.Join(tmp, "global")
 	launcher := filepath.Join(prefix, "lib", "node_modules", "@ghship", "cli", "run.cjs")
@@ -177,6 +194,9 @@ func run() error {
 	if e = checkNpmVersion("0.0.1"); e != nil {
 		return e
 	}
+	if e = checkProject(fixtureBinary); e != nil {
+		return e
+	}
 	// Unknown user content and modified managed content must prevent update.
 	unknown := filepath.Join(home, ".agents", "skills", "ghship", "custom.txt")
 	if e = os.WriteFile(unknown, []byte("do not delete"), 0600); e != nil {
@@ -221,6 +241,10 @@ func run() error {
 		return e
 	}
 	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	currentBinary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary))
+	if e = checkProject(currentBinary); e != nil {
 		return e
 	}
 	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "update", "--package-source", fixtureTar, "--json"); e == nil {
