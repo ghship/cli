@@ -20,8 +20,8 @@ func main() {
 	}
 }
 func run() error {
-	if len(os.Args) != 2 {
-		return fmt.Errorf("usage: go run ./tools/smoke <built-npm-directory>")
+	if len(os.Args) != 2 && len(os.Args) != 4 {
+		return fmt.Errorf("usage: go run ./tools/smoke <built-npm-directory> [npm-tarball sha256]")
 	}
 	pkg, e := filepath.Abs(os.Args[1])
 	if e != nil {
@@ -60,8 +60,21 @@ func run() error {
 		cli := filepath.Join(filepath.Dir(p), "node_modules", "npm", "bin", "npm-cli.js")
 		return command("node", append([]string{cli}, args...)...)
 	}
-	// Pack a complete registry-shaped package. No remote registry writes.
-	b, e := npm("pack", pkg, "--json", "--pack-destination", tmp)
+	// With an external candidate, inspect and exercise the exact same tarball.
+	// The CI job verifies its SHA-256 before extracting pkg.
+	tarball := ""
+	packArgs := []string{"pack", pkg, "--json", "--pack-destination", tmp}
+	if len(os.Args) == 4 {
+		tarball, e = filepath.Abs(os.Args[2])
+		if e != nil {
+			return e
+		}
+		if e = verifyCandidate(pkg, tarball, os.Args[3]); e != nil {
+			return e
+		}
+		packArgs = []string{"pack", tarball, "--dry-run", "--json"}
+	}
+	b, e := npm(packArgs...)
 	if e != nil {
 		return e
 	}
@@ -77,7 +90,9 @@ func run() error {
 			return fmt.Errorf("unexpected distribution file: %s", file.Path)
 		}
 	}
-	tarball := filepath.Join(tmp, packs[0].Filename)
+	if tarball == "" {
+		tarball = filepath.Join(tmp, packs[0].Filename)
+	}
 	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp)
 	if e != nil {
 		return e
@@ -204,10 +219,25 @@ func run() error {
 		}
 		return os.WriteFile(manifest, original, 0644)
 	}
+	candidateBinary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary))
+	checkBinary := func(installed string) error {
+		want, err := os.ReadFile(candidateBinary)
+		if err != nil {
+			return err
+		}
+		got, err := os.ReadFile(installed)
+		if err != nil || !bytes.Equal(want, got) {
+			return fmt.Errorf("installed CLI differs from shared candidate")
+		}
+		return nil
+	}
 	checkNpmVersion := func(expected string) error {
 		b, err := command("node", launcher, "version")
 		if err != nil || strings.TrimSpace(string(b)) != expected {
 			return fmt.Errorf("installed npm CLI version mismatch: %s", b)
+		}
+		if expected == assets.Version {
+			return checkBinary(filepath.Join(filepath.Dir(launcher), "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary)))
 		}
 		return nil
 	}
@@ -303,7 +333,7 @@ func run() error {
 	if e = checkNpmVersion(assets.Version); e != nil {
 		return e
 	}
-	currentBinary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary))
+	currentBinary := candidateBinary
 	if e = checkProject(currentBinary); e != nil {
 		return e
 	}
@@ -357,6 +387,9 @@ func run() error {
 			if e = verifyInstalledSkill(home, assets.Version); e != nil {
 				return e
 			}
+			if e = checkNpmVersion(assets.Version); e != nil {
+				return e
+			}
 		}
 	}
 	if _, e = command("node", filepath.Join(pkg, "run.cjs"), "unknown-command"); e == nil {
@@ -376,6 +409,9 @@ func run() error {
 		b, err := command(installedBinary, "version")
 		if err != nil || strings.TrimSpace(string(b)) != expected {
 			return fmt.Errorf("standalone CLI version mismatch: %s", b)
+		}
+		if expected == assets.Version {
+			return checkBinary(installedBinary)
 		}
 		return nil
 	}
@@ -461,6 +497,9 @@ func run() error {
 		fmt.Printf("PASS standalone %s: %s", action, b)
 		if action != "uninstall" {
 			if e = verifyInstalledSkill(home, assets.Version); e != nil {
+				return e
+			}
+			if e = checkStandaloneVersion(assets.Version); e != nil {
 				return e
 			}
 		}
