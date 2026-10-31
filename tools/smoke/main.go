@@ -424,6 +424,17 @@ func run() error {
 			return restore
 		}
 	}
+	if runtime.GOOS == "windows" {
+		parent := filepath.Dir(skillDir)
+		if e = withDeniedDirectoryCreate(parent, func() error {
+			return refused(func() ([]byte, error) {
+				return command(binary, "update", "--standalone", "--user-only", "--json")
+			}, "Access is denied")
+		}); e != nil {
+			return fmt.Errorf("standalone Windows ACL: %w", e)
+		}
+		fmt.Println("PASS Windows ACL denied directory creation and preserved installation")
+	}
 	if e = refused(func() ([]byte, error) {
 		return command(fixtureBinary, "update", "--standalone", "--user-only", "--json")
 	}, "downgrade refused"); e != nil {
