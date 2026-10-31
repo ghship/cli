@@ -313,6 +313,11 @@ func run() error {
 	}); e != nil {
 		return fmt.Errorf("npm conflict: %w", e)
 	}
+	if e = testSkillConflicts(func() ([]byte, error) {
+		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--package-source", tarball, "--user-only", "--json")
+	}); e != nil {
+		return fmt.Errorf("npm reinstall conflict: %w", e)
+	}
 	// A different failure, even with exit 1, must not pass as a downgrade.
 	beforeUnrelated, e := snapshotTrees(protected...)
 	if e != nil {
@@ -478,6 +483,11 @@ func run() error {
 		return command(binary, "update", "--standalone", "--user-only", "--json")
 	}); e != nil {
 		return fmt.Errorf("standalone conflict: %w", e)
+	}
+	if e = testSkillConflicts(func() ([]byte, error) {
+		return command(binary, "install", "--standalone", "--user-only", "--json")
+	}); e != nil {
+		return fmt.Errorf("standalone reinstall conflict: %w", e)
 	}
 	// Refuse a non-writable staging parent on Unix; Windows ACLs need a
 	// separate controlled scenario and must not be inferred from chmod.
