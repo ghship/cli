@@ -42,6 +42,7 @@ jobs:
         shell: bash
         run: |
           test "$(go env GOHOSTOS)-$(go env GOHOSTARCH)" = "${{ matrix.platform }}"
+          test "$(go env GOOS)-$(go env GOARCH)" = "${{ matrix.platform }}"
           node -e "const m={x64:'amd64',arm64:'arm64'};const o={win32:'windows',darwin:'darwin',linux:'linux'};if(o[process.platform]+'-'+m[process.arch]!==process.argv[1])process.exit(1)" "${{ matrix.platform }}"
       # Windows Git may materialize CRLF; Linux and macOS still enforce gofmt.
       - run: test -z "$(gofmt -l .)"
