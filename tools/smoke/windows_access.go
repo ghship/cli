@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strings"
 )
 
 // The parent belongs to this test. Verify effective access before and after
@@ -39,7 +40,9 @@ func withDeniedDirectoryCreate(parent string, operation func() error) (result er
 	}
 	if err := os.Mkdir(probe, 0700); err == nil {
 		_ = os.Remove(probe)
-		return errors.New("Windows ACL did not deny directory creation")
+		out, aclErr := exec.Command("icacls", parent).CombinedOutput()
+		acl := strings.ToLower(string(out))
+		return fmt.Errorf("Windows ACL did not deny directory creation (ACL readable: %t; deny ACE visible: %t; target visible: %t)", aclErr == nil, strings.Contains(acl, "(deny)"), strings.Contains(acl, strings.ToLower(current.Username)))
 	} else if !errors.Is(err, os.ErrPermission) {
 		return fmt.Errorf("ACL probe failed for another reason: %w", err)
 	}
