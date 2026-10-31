@@ -1,0 +1,25 @@
+{
+  "name": "@ghship/cli",
+  "version": "1.0.0",
+  "description": "Go CLI and AI skill for native GitHub delivery pipelines",
+  "bin": {
+    "ghship": "run.cjs"
+  },
+  "files": [
+    "run.cjs",
+    "bin",
+    "README.md",
+    "checksums.json"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ghship/cli.git"
+  },
+  "scripts": {
+    "test": "node --test test.cjs"
+  },
+  "license": "MIT"
+}
