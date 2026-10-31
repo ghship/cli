@@ -24,3 +24,16 @@ Issue 是任务推进的统一入口；PR、Review、CI 和交付产物记录各
 - 分清单元测试、受控集成测试与实际成品/平台操作。完整测试套件通过不等于所有真实流程通过；未覆盖项明确记录，不用帮助输出或参数拒绝冒充成功路径验证。
 - 在指定测试机运行全部回归，使用实际安装包验证CLI连续操作与安装更新卸载；真实凭据只在授权执行者的隔离测试配置内使用，禁止输出或写入测试报告。原用户配置和项目成果必须保留。
 
+
+<!-- ghship:begin -->
+## ghship project integration
+
+Use the ghship skill at the current user's home default `.agents/skills/ghship/SKILL.md`,
+including its `references/pipeline.md`, `references/workflow.md` and `references/cli.md`.
+Read this repository's `.ghship/skill.md` if present, then `.ghship/README.md`.
+Apply current user instructions and applicable AGENTS constraints first; project
+supplement/explicit scoped overrides then global defaults. Never invent results.
+CLI help and actual platform permissions remain authoritative software facts.
+Keep project rules outside these markers or in `.ghship/skill.md`; editing inside
+them makes `ghship project update` preserve the file and report a conflict.
+<!-- ghship:end -->
