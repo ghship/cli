@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
+	"strings"
 
 	"golang.org/x/sys/windows"
 )
@@ -21,7 +21,10 @@ func withDeniedDirectoryCreate(parent string, operation func() error) (result er
 	if err != nil {
 		return err
 	}
-	originalText := original.String()
+	originalACL, err := aclFingerprint(original)
+	if err != nil {
+		return err
+	}
 	dacl, _, err := original.DACL()
 	if err != nil {
 		return err
@@ -43,9 +46,12 @@ func withDeniedDirectoryCreate(parent string, operation func() error) (result er
 		if err == nil {
 			var restored *windows.SECURITY_DESCRIPTOR
 			restored, err = windows.GetNamedSecurityInfo(parent, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-			if err == nil && restored.String() != originalText {
-				redact := regexp.MustCompile(`S-\d(?:-\d+)+`)
-				err = fmt.Errorf("restored test ACL differs: original %s; restored %s", redact.ReplaceAllString(originalText, "SID"), redact.ReplaceAllString(restored.String(), "SID"))
+			if err == nil {
+				var actual string
+				actual, err = aclFingerprint(restored)
+				if err == nil && actual != originalACL {
+					err = errors.New("restored test DACL differs from original")
+				}
 			}
 		}
 		if err != nil {
@@ -83,4 +89,30 @@ func withDeniedDirectoryCreate(parent string, operation func() error) (result er
 		return errors.New("operation changed test ACL")
 	}
 	return nil
+}
+
+// A DACL's exact ACE sequence, flags and inherited/protected status must be
+// restored. Windows may add the derived AI (auto-inherited) metadata bit when
+// an unprotected DACL is restored; this bit does not alter the ACEs or the
+// protected inheritance setting. Owner/group fields are not part of a DACL.
+func aclFingerprint(sd *windows.SECURITY_DESCRIPTOR) (string, error) {
+	control, _, err := sd.Control()
+	if err != nil {
+		return "", err
+	}
+	sddl := sd.String()
+	start := strings.Index(sddl, "D:")
+	if start < 0 {
+		return "", errors.New("DACL missing from security descriptor")
+	}
+	dacl := sddl[start+2:]
+	if end := strings.Index(dacl, "S:"); end >= 0 {
+		dacl = dacl[:end]
+	}
+	aces := strings.IndexByte(dacl, '(')
+	if aces < 0 {
+		aces = len(dacl)
+	}
+	flags := strings.ReplaceAll(dacl[:aces], "AI", "")
+	return fmt.Sprintf("%04x:%s%s", control&(windows.SE_DACL_PRESENT|windows.SE_DACL_PROTECTED|windows.SE_DACL_DEFAULTED), flags, dacl[aces:]), nil
 }
