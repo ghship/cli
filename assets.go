@@ -8,4 +8,4 @@ import "embed"
 var Skill embed.FS
 
 // Version is the release version; npm metadata is checked during packaging.
-const Version = "1.0.0"
+const Version = "1.0.1"

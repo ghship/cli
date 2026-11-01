@@ -20,7 +20,7 @@
 - `project skill --show|--create`：`--project`、`--mode supplement|override`、`--overrides testing,acceptance`、`--json`；用户内容始终保留。
 - `doctor --scope user|project --json`：实际诊断，缺工具给官方安装链接，不自动sudo安装。
 
-GitHub下载渠道自带skill，不需Node/Go。npm包包含Go二进制，用户不需编译器。开发测试用`npm exec --package /absolute/package.tgz -- ghship install --package-source /absolute/package.tgz --user-only`；这是本地验收入口，不能声称尚未发布的registry已可用。
+GitHub下载渠道自带skill，不需Node/Go。npm包包含Go二进制，用户不需编译器。开发测试用`npm exec --package /absolute/package.tgz -- ghship install --package-source /absolute/package.tgz --user-only`；这是本地验收入口，不能将尚未发布的版本说成registry已可用。
 
 `--token` 为 token 文本；`--token-file` 与 `--token-stdin` 共用 JSON 输入，格式固定为：
 
