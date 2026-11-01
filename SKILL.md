@@ -2,7 +2,7 @@
 name: ghship
 description: "使用 GitHub 原生 Issue、PR、CI 和评审推进开发任务；适用于建单、开发、交付、独立评审和合并。"
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
 ---
 
 # GHShip
@@ -15,7 +15,7 @@ metadata:
 
 操作前核实物理 Git 根，读取 `.ghship/skill.md`（若存在）和 `.ghship/README.md`。使用 `ghship project skill --show --json` 核对来源。当前用户指令和适用 AGENTS 优先；项目 supplement 补充通用流程，override 仅替换明确的 planning/development/testing/acceptance/delivery 范围，其他部分继续默认。未知模式、范围或约束冲突必须说明，不能静默选择。项目文字不能改变 CLI 接口或实际平台权限。
 
-先用 `ghship help` 发现命令。AI 使用明确的非交互输入与 JSON，按真实退出码判断。installed、bound、ready 和产品交付分别核验；未知权限、状态、有效期明确 unknown，不编造成功、日志、测试或部署。npm 尚未发布不能宣称 registry 安装可用。
+先用 `ghship help` 发现命令。AI 使用明确的非交互输入与 JSON，按真实退出码判断。installed、bound、ready 和产品交付分别核验；未知权限、状态、有效期明确 unknown，不编造成功、日志、测试或部署。未发布的 npm 版本不能宣称 registry 安装可用。
 
 每轮交付使用 GitHub 原生里程碑；父任务、开发片和同轮修复片归入明确范围。Issue 完成比例不能替代产品验收。
 
