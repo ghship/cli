@@ -2,7 +2,7 @@
 
 面向人和 AI 的轻量 GitHub 开发交付工具：从开发文档拆分 Issue，使用原生里程碑、父子关系和依赖串行领取任务，开发、测试、独立验收、合并，再验证产品交付。Go 单入口；Issue 是任务推进的统一入口，PR、Review、CI 和产物记录各自事实。
 
-**安装渠道：** [GitHub Release](https://github.com/ghship/cli/releases/tag/v1.0.0) 和 [npm registry](https://www.npmjs.com/package/@ghship/cli) 均已提供 1.0.0。
+**安装渠道：** [GitHub Release](https://github.com/ghship/cli/releases/tag/v1.0.1) 和 [npm registry](https://www.npmjs.com/package/@ghship/cli) 均已提供 1.0.1。
 
 ## 安装与首次接入
 
