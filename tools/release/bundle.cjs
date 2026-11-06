@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
+const { singlePack } = require('../../npm/run.cjs');
 const [mainArg, outputArg] = process.argv.slice(2);
 if (!mainArg || !outputArg || process.argv.length !== 4) throw Error('usage: node bundle.cjs <built-main-directory> <new-output-directory>');
 const main = path.resolve(mainArg), output = path.resolve(outputArg);
@@ -28,7 +29,7 @@ for (const pkg of packages) {
  const command=process.platform==='win32'?'npm.cmd':'npm';
  const result=spawnSync(command,['pack',pkg.directory,'--json','--ignore-scripts','--pack-destination',output],{encoding:'utf8',shell:process.platform==='win32'});
  if(result.status!==0)throw Error(`npm pack ${pkg.name} failed: ${result.stderr}`);
- const record=JSON.parse(result.stdout)[0];
+ const record=singlePack(JSON.parse(result.stdout),pkg.name);
  const allowed=pkg.target ? ['README.md','bin/'+(pkg.target.startsWith('win32-')?'ghship.exe':'ghship'),'package.json'] : ['README.md','checksums.json','package.json','run.cjs'];
  if(record.name!==pkg.name||record.version!==meta.version||JSON.stringify(record.files.map(f=>f.path).sort())!==JSON.stringify(allowed.sort()))throw Error(`unexpected ${pkg.name} package contents`);
  const data=fs.readFileSync(path.join(output,record.filename));

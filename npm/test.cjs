@@ -3,12 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { platformInfo } = require('./run.cjs');
+const { platformInfo, singlePack } = require('./run.cjs');
 test('six target selection paths', () => {
   for (const os of ['darwin', 'linux', 'win32']) for (const cpu of ['x64','arm64'])
     assert.match(platformInfo(os, cpu).binary, os === 'win32' ? /ghship\.exe$/ : /ghship$/);
   assert.throws(() => platformInfo('freebsd','x64'), /Unsupported/);
   assert.throws(() => platformInfo('linux','ia32'), /Unsupported/);
+});
+
+test('npm pack results from npm 10, 11 and 12 are validated', () => {
+  const record={name:'@ghship/cli',version:'1.0.4'};
+  assert.deepEqual(singlePack([record],record.name),record);
+  assert.deepEqual(singlePack({[record.name]:record},record.name),record);
+  assert.throws(()=>singlePack([],record.name),/Unexpected/);
+  assert.throws(()=>singlePack([record,record],record.name),/Unexpected/);
+  assert.throws(()=>singlePack({'@wrong/package':record},record.name),/Unexpected/);
 });
 
 function assertLicenseNotices(readme, projectLicense) {
