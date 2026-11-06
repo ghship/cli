@@ -85,7 +85,11 @@ func buildFixture(pkg, tmp string) (string, string, error) {
 		return "", "", fmt.Errorf("build synthetic baseline: %w: %s", e, b)
 	}
 	for _, name := range []string{"package.json", "run.cjs", "README.md"} {
-		b, e := os.ReadFile(filepath.Join(pkg, name))
+		source := filepath.Join(pkg, name)
+		if name == "run.cjs" {
+			source = filepath.Join("tools", "smoke", "testdata", "legacy-run.cjs")
+		}
+		b, e := os.ReadFile(source)
 		if e != nil {
 			return "", "", e
 		}
@@ -95,6 +99,8 @@ func buildFixture(pkg, tmp string) (string, string, error) {
 				return "", "", e
 			}
 			v["version"] = oldVersion
+			delete(v, "optionalDependencies")
+			v["files"] = []string{"run.cjs", "bin", "README.md", "checksums.json"}
 			b, e = json.MarshalIndent(v, "", "  ")
 			if e != nil {
 				return "", "", e

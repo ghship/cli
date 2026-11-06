@@ -1,7 +1,10 @@
 # GHShip npm distribution
 
-Go CLI and home AI skill plus per-project integration. Package includes native
-binaries for macOS/Linux/Windows × amd64/arm64, with no postinstall downloads.
+Go CLI and home AI skill plus per-project integration. npm installs the native
+binary package matching the Node.js operating system and architecture for
+macOS/Linux/Windows × x64/arm64, with no postinstall downloads. Optional
+dependencies must be enabled and the matching package must be available from the
+configured registry. An emulated Node.js runtime selects its own architecture.
 
 After publication: `npx @ghship/cli@latest install` installs the home skill, same-version
 persistent CLI, then enters project initialization. `--user-only` stops after user
@@ -18,7 +21,8 @@ expiry when GitHub returns it, otherwise unknown. Tokens never belong in project
 
 For a downloaded npm tarball, use:
 `npm exec --package /absolute/ghship.tgz -- ghship install --package-source /absolute/ghship.tgz`.
-Add `--user-only` to install shared tools without initializing a project.
+The configured registry must provide the same-version platform package. Add
+`--user-only` to install shared tools without initializing a project.
 Registry commands require the selected version to be published.
 
 Detailed Chinese tutorial and AI skill: https://github.com/ghship/cli

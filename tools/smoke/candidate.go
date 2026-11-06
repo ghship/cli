@@ -105,23 +105,20 @@ func verifyCandidate(pkg, tarball, expected string) error {
 	if err = json.Unmarshal(b, &checks); err != nil {
 		return err
 	}
-	for _, target := range []string{"darwin", "linux", "windows"} {
-		for _, arch := range []string{"amd64", "arm64"} {
+	for _, target := range []string{"darwin", "linux", "win32"} {
+		for _, arch := range []string{"x64", "arm64"} {
 			name := "ghship"
-			if target == "windows" {
+			if target == "win32" {
 				name += ".exe"
 			}
-			rel := "bin/" + target + "-" + arch + "/" + name
-			if !seen[rel] {
-				return fmt.Errorf("candidate binary missing: %s", rel)
-			}
-			data, err := os.ReadFile(filepath.Join(pkg, filepath.FromSlash(rel)))
+			platform := target + "-" + arch
+			data, err := os.ReadFile(filepath.Join(pkg+"-platforms", platform, "bin", name))
 			if err != nil {
 				return err
 			}
 			sum := sha256.Sum256(data)
-			if checks[rel] != hex.EncodeToString(sum[:]) {
-				return fmt.Errorf("candidate binary checksum mismatch: %s", rel)
+			if checks[platform] != hex.EncodeToString(sum[:]) {
+				return fmt.Errorf("candidate binary checksum mismatch: %s", platform)
 			}
 		}
 	}

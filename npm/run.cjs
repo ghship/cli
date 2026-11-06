@@ -4,11 +4,24 @@ const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
-function binaryPath(platform = process.platform, arch = process.arch) {
- const os = {darwin:'darwin', linux:'linux', win32:'windows'}[platform];
- const cpu = {x64:'amd64', arm64:'arm64'}[arch];
- if (!os || !cpu) throw new Error(`Unsupported platform: ${platform}/${arch}`);
- return path.join(__dirname, 'bin', `${os}-${cpu}`, os === 'windows' ? 'ghship.exe' : 'ghship');
+function platformInfo(platform = process.platform, arch = process.arch) {
+ if (!['darwin','linux','win32'].includes(platform) || !['x64','arm64'].includes(arch)) throw new Error(`Unsupported platform: ${platform}/${arch}`);
+ return {target:`${platform}-${arch}`,name:`@ghship/cli-${platform}-${arch}`,binary:platform==='win32'?'ghship.exe':'ghship'};
+}
+function binaryPath(platform = process.platform, arch = process.arch, root = __dirname) {
+ const info=platformInfo(platform,arch);
+ const meta=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
+ let manifest;try {manifest=require.resolve(`${info.name}/package.json`,{paths:[root]});}
+ catch (_) {throw new Error(`Platform package ${info.name}@${meta.version} is missing; enable optional dependencies and reinstall @ghship/cli@${meta.version}`);}
+ const allowed=[path.join(root,'node_modules',info.name),path.join(path.dirname(path.dirname(root)),info.name)];
+ if(!allowed.some(dir=>path.resolve(path.dirname(manifest))===path.resolve(dir)))throw new Error('Platform package is outside the installation; preserved');
+ noLinks(manifest);
+ const platformMeta=JSON.parse(fs.readFileSync(manifest,'utf8'));
+ if(platformMeta.name!==info.name||platformMeta.version!==meta.version||!platformMeta.os?.includes(platform)||!platformMeta.cpu?.includes(arch))throw new Error('Platform package does not match CLI version or platform; preserved');
+ const executable=path.join(path.dirname(manifest),'bin',info.binary);noLinks(executable);
+ const checks=JSON.parse(fs.readFileSync(path.join(root,'checksums.json'),'utf8'));
+ if(!checks[info.target]||hashFile(executable)!==checks[info.target])throw new Error('Platform binary missing or checksum mismatch; preserved');
+ return executable;
 }
 function npmCommand() {
  if (process.env.npm_execpath && fs.existsSync(process.env.npm_execpath)) return [process.execPath, [process.env.npm_execpath]];
@@ -53,8 +66,10 @@ function observePackage(root,meta,existing,replacingVerifiedReceipt=false) {
  const directory=path.join(root,meta.name); noLinks(directory);
  const metadata=JSON.parse(fs.readFileSync(path.join(directory,'package.json'),'utf8'));
  if(metadata.name!==meta.name||metadata.version!==existing.version||metadata.bin?.ghship!=='run.cjs')throw new Error('Unrecognized global package; preserved');
- const relative=path.relative(__dirname,binaryPath());
- const observed={root,name:meta.name,version:metadata.version,launcher:hashFile(path.join(directory,'run.cjs')),binary:hashFile(path.join(directory,relative))};
+ const info=platformInfo();const legacyOS={darwin:'darwin',linux:'linux',win32:'windows'}[process.platform];const legacyArch={x64:'amd64',arm64:'arm64'}[process.arch];
+ const legacy=path.join(directory,'bin',`${legacyOS}-${legacyArch}`,info.binary);
+ const installedBinary=fs.existsSync(legacy)?legacy:binaryPath(process.platform,process.arch,directory);noLinks(installedBinary);
+ const observed={root,name:meta.name,version:metadata.version,launcher:hashFile(path.join(directory,'run.cjs')),binary:hashFile(installedBinary)};
  const current=observed.version===meta.version&&observed.launcher===hashFile(path.join(__dirname,'run.cjs'))&&observed.binary===hashFile(binaryPath());
  const receipt=packageReceipt(root);noLinks(receipt);
  let recorded=null;try{recorded=JSON.parse(fs.readFileSync(receipt,'utf8'));}catch(error){if(error.code!=='ENOENT')throw new Error('Invalid installation receipt; preserved');}
@@ -115,7 +130,7 @@ function lifecycle(executable,args) {
  const verified=JSON.parse(npm(['list','-g',meta.name,'--depth=0','--json'],true));
  if(!verified.dependencies||verified.dependencies[meta.name]?.version!==meta.version)throw new Error('Installed CLI version does not match skill; installation incomplete');
  const persisted=observePackage(root,meta,verified.dependencies[meta.name],!!observation);if(!persisted.current)throw new Error('Persistent CLI content does not match this package');
- const runtimeVersion=go(path.join(root,meta.name,path.relative(__dirname,executable)),['version'],true);
+ const runtimeVersion=go(binaryPath(process.platform,process.arch,path.join(root,meta.name)),['version'],true);
  if(runtimeVersion.code!==0||runtimeVersion.stdout.trim()!==meta.version)throw new Error('Persistent CLI cannot run the expected version');
  saveReceipt(root,persisted.observed);
  if(action==='update'||userOnly){console.log(JSON.stringify({userInstalled:true,version:meta.version,projectInitialized:false}));return 0;}
@@ -123,7 +138,7 @@ function lifecycle(executable,args) {
  let result;try{result=JSON.parse(init.stdout);}catch(_){result={ready:false,missing:['Initialization failed before producing a result'],next:['ghship init --json']};}
  result.userInstalled=true;result.version=meta.version;console.log(JSON.stringify(result));return init.code;
 }
-module.exports = {binaryPath};
+module.exports = {binaryPath,platformInfo};
 if(require.main===module) {
  try {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');
