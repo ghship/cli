@@ -20,6 +20,9 @@ test('candidate archives work when the source path contains a colon', {skip:proc
   return {name,target,filename,sha256:crypto.createHash('sha256').update(data).digest('hex'),integrity:'sha512-'+crypto.createHash('sha512').update(data).digest('base64')};
  });
  fs.writeFileSync(path.join(source,'manifest.json'),JSON.stringify({version:'1.0.3',packages}));
- const result=spawnSync(process.execPath,[path.join(__dirname,'unpack.cjs'),source,path.join(tmp,'extracted')],{encoding:'utf8'});
+ const bin=path.join(tmp,'bin');fs.mkdirSync(bin);
+ fs.writeFileSync(path.join(bin,'tar'), '#!/bin/sh\nfor arg in "$@"; do if [ "$arg" = "-C" ]; then echo "native destination path passed to POSIX tar" >&2; exit 1; fi; done\nexec /usr/bin/tar "$@"\n',{mode:0o755});
+ const env={...process.env,PATH:bin+path.delimiter+process.env.PATH};
+ const result=spawnSync(process.execPath,[path.join(__dirname,'unpack.cjs'),source,path.join(tmp,'extracted')],{encoding:'utf8',env});
  assert.equal(result.status,0,result.stderr);
 });

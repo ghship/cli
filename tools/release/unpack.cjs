@@ -17,7 +17,7 @@ for(const p of manifest.packages){
  const out=target?path.join(dest,'package-platforms',target):path.join(dest,'package');fs.mkdirSync(out,{recursive:true});
  // Pass the archive on stdin: GNU tar treats a Windows drive letter in an
  // archive filename as a remote host, while both GNU and BSD tar accept stdin.
- const result=spawnSync('tar',['-xzf','-','-C',out,'--strip-components=1'],{input:data,encoding:'utf8'});
+ const result=spawnSync('tar',['-xzf','-','--strip-components=1'],{cwd:out,input:data,encoding:'utf8'});
  if(result.status!==0)throw Error(`cannot extract ${p.filename}: ${result.stderr}`);
  const meta=JSON.parse(fs.readFileSync(path.join(out,'package.json')));
  if(meta.name!==p.name||meta.version!==manifest.version)throw Error('candidate metadata mismatch');
