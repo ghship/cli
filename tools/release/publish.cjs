@@ -1,6 +1,6 @@
 // Publish exactly the verified CI bundle, in dependency order. No token is read
 // or printed here; npm obtains short-lived credentials from its trusted publisher.
-const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
 const dir=path.resolve(process.argv[2]||'');
 if(process.argv.length!==3)throw Error('usage: node publish.cjs <verified-bundle-directory>');
@@ -37,9 +37,27 @@ function compare(a,b){
  for(let i=0;i<3;i++){if(x[i]!==y[i])return x[i]-y[i];}return 0;
 }
 function protectLatest(){const current=latest();if(!/^\d+\.\d+\.\d+$/.test(current)||compare(current,manifest.version)>0)throw Error(`Refusing to move latest backwards from ${current}`);}
+function verifyDownload(p){
+ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'ghship-release-verify-'));
+ try {
+  // A fresh isolated cache requires npm to fetch the published tarball rather
+  // than accepting metadata or a cached copy as proof of availability.
+  const r=npm(['pack',`${p.name}@${manifest.version}`,'--json','--ignore-scripts','--prefer-online','--cache',path.join(temp,'cache'),'--pack-destination',temp]);
+  if(r.status!==0){
+   let error;try{error=JSON.parse(r.stdout).error;}catch(_){}
+   if(error?.code==='E404')return false;
+   throw Error(`Cannot download ${p.name}@${manifest.version}: ${r.stderr.trim()}`);
+  }
+  const records=JSON.parse(r.stdout);
+  if(!Array.isArray(records)||records.length!==1||records[0].filename!==p.filename)throw Error(`Unexpected download metadata: ${p.name}`);
+  const data=fs.readFileSync(path.join(temp,p.filename));
+  if(crypto.createHash('sha256').update(data).digest('hex')!==p.sha256||'sha512-'+crypto.createHash('sha512').update(data).digest('base64')!==p.integrity)throw Error(`Downloaded content differs: ${p.name}`);
+  return true;
+ } finally {fs.rmSync(temp,{recursive:true,force:true});}
+}
 async function waitAvailable(p){
  for(let i=0;i<80;i++){
-  if(versionIntegrity(p))return;
+  if(versionIntegrity(p)&&verifyDownload(p))return;
   await new Promise(resolve=>setTimeout(resolve,15000));
  }
  throw Error(`${p.name}@${manifest.version} not yet available; inspect npm before retrying`);
@@ -56,7 +74,7 @@ async function publish(p){
  protectLatest();
  const platforms=targets.map(target=>manifest.packages.find(p=>p.name==='@ghship/cli-'+target));
  for(const p of platforms)await publish(p);
- await Promise.all(platforms.map(waitAvailable));
+ for(const p of platforms)await waitAvailable(p);
  protectLatest();
  const main=manifest.packages.find(p=>p.name==='@ghship/cli');
  await publish(main);

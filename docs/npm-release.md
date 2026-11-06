@@ -2,7 +2,7 @@
 
 发布对象是主分支 verification 成功运行中保存的同一批七个包，不重新构建。主包与平台包使用相同版本，平台包不得含其他平台的可执行文件。
 
-`npm-release.yml` 通过 `workflow_dispatch` 接收成功的主分支 verification run ID 和该 run 的候选 artifact 名称。流程核验工作流、提交、结论、构件和 SHA-256；确认 npm `latest` 不会倒退后先提交六个平台包，等待官方 registry 返回相同版本与完整性哈希，再发布主包并确认 `latest`。重试已存在的版本时必须核对远端 integrity；哈希不匹配、权限拒绝或状态不明时停止调查。npm 发布扫描可能延迟可用；主包不能在平台包可用前发布。镜像同步另行验证。
+`npm-release.yml` 通过 `workflow_dispatch` 接收成功的主分支 verification run ID 和该 run 的候选 artifact 名称。流程核验工作流、提交、结论、构件和 SHA-256；确认 npm `latest` 不会倒退后先提交六个平台包，等待官方 registry 返回相同版本与完整性哈希，并使用独立空缓存实际下载和校验每个包，再发布主包并确认 `latest`。重试已存在的版本时必须核对远端 integrity；哈希不匹配、权限拒绝或状态不明时停止调查。npm 发布扫描可能延迟可用；主包不能在平台包可用前发布。镜像同步另行验证。
 
 发布依赖 npm Trusted Publishing。为七个包配置 `ghship/cli` 仓库中的 `npm-release.yml`，允许发布；主包还须允许 dist-tag 管理，以支持安全续跑。使用 GitHub-hosted runner、OIDC 与自动 provenance，不保存长期 npm 发布令牌。
 
