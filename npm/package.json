@@ -1,6 +1,6 @@
 {
   "name": "@ghship/cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Go CLI and AI skill for native GitHub delivery pipelines",
   "bin": {
     "ghship": "run.cjs"

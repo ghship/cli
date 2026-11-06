@@ -27,7 +27,9 @@ use --standalone, downloaded npm tarballs use the package's local npm exec entry
 Default skill: ~/.agents/skills/ghship; repeat --dir for custom installations.
 Direct download: --standalone also manages the executable; default Unix bin
 ~/.local/bin, Windows %LOCALAPPDATA%/Programs/ghship. No sudo or PATH edits.
-Npm and standalone installations cannot overwrite one another.
+Npm install/update also updates a verified standalone installation in place,
+without changing its installation channel. Npm uninstall manages npm installs;
+use a separate downloaded executable with --standalone for standalone uninstall.
 Updates/uninstalls require managed unchanged files, preserve users/projects,
 refuse symlinks, unknown content and downgrades; stage and recover on failure.
 Windows standalone update/uninstall: run from a separate downloaded executable.
