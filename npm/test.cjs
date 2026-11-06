@@ -3,12 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { binaryPath } = require('./run.cjs');
+const { platformInfo } = require('./run.cjs');
 test('six target selection paths', () => {
   for (const os of ['darwin', 'linux', 'win32']) for (const cpu of ['x64','arm64'])
-    assert.match(binaryPath(os, cpu), os === 'win32' ? /ghship\.exe$/ : /ghship$/);
-  assert.throws(() => binaryPath('freebsd','x64'), /Unsupported/);
-  assert.throws(() => binaryPath('linux','ia32'), /Unsupported/);
+    assert.match(platformInfo(os, cpu).binary, os === 'win32' ? /ghship\.exe$/ : /ghship$/);
+  assert.throws(() => platformInfo('freebsd','x64'), /Unsupported/);
+  assert.throws(() => platformInfo('linux','ia32'), /Unsupported/);
 });
 
 function assertLicenseNotices(readme, projectLicense) {

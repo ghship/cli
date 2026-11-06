@@ -1,0 +1,53 @@
+name: npm release
+on:
+  workflow_dispatch:
+    inputs:
+      verification_run:
+        description: Successful main-branch verification run ID for this exact commit
+        required: true
+        type: string
+      artifact:
+        description: Candidate artifact name from that run
+        required: true
+        default: ghship-candidate-1
+        type: string
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+concurrency:
+  group: npm-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install npm with trusted dist-tag support
+        run: npm install -g npm@12.2.0 --ignore-scripts
+      - name: Verify main revision and successful verification run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ inputs.verification_run }}
+          RELEASE_ARTIFACT: ${{ inputs.artifact }}
+        shell: bash
+        run: |
+          [[ "$RELEASE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_ARTIFACT" =~ ^ghship-candidate-[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN" > "$RUNNER_TEMP/verification.json"
+          node -e "const r=require(process.argv[1]);if(r.path!=='.github/workflows/verification.yml'||r.status!=='completed'||r.conclusion!=='success'||r.event!=='push'||r.head_branch!=='main'||r.head_sha!==process.env.GITHUB_SHA)throw Error('verification run does not match the released main commit')" "$RUNNER_TEMP/verification.json"
+          gh run download "$RELEASE_RUN" --name "$RELEASE_ARTIFACT" --dir "$RUNNER_TEMP/candidate"
+      - name: Verify all seven packages
+        run: node tools/release/unpack.cjs "$RUNNER_TEMP/candidate" "$RUNNER_TEMP/extracted"
+      - name: Publish platform packages, then main latest
+        run: node tools/release/publish.cjs "$RUNNER_TEMP/candidate"

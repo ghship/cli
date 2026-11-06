@@ -1,16 +1,23 @@
 {
   "name": "@ghship/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Go CLI and AI skill for native GitHub delivery pipelines",
   "bin": {
     "ghship": "run.cjs"
   },
   "files": [
     "run.cjs",
-    "bin",
     "README.md",
     "checksums.json"
   ],
+  "optionalDependencies": {
+    "@ghship/cli-darwin-x64": "1.0.3",
+    "@ghship/cli-darwin-arm64": "1.0.3",
+    "@ghship/cli-linux-x64": "1.0.3",
+    "@ghship/cli-linux-arm64": "1.0.3",
+    "@ghship/cli-win32-x64": "1.0.3",
+    "@ghship/cli-win32-arm64": "1.0.3"
+  },
   "engines": {
     "node": ">=18"
   },

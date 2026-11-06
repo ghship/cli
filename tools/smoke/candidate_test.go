@@ -18,16 +18,22 @@ func TestVerifyCandidate(t *testing.T) {
 	archive := filepath.Join(root, "candidate.tgz")
 	files := map[string][]byte{"package.json": []byte(`{"name":"@ghship/cli"}`)}
 	checks := map[string]string{}
-	for _, osname := range []string{"darwin", "linux", "windows"} {
-		for _, arch := range []string{"amd64", "arm64"} {
+	for _, osname := range []string{"darwin", "linux", "win32"} {
+		for _, arch := range []string{"x64", "arm64"} {
 			name := "ghship"
-			if osname == "windows" {
+			if osname == "win32" {
 				name += ".exe"
 			}
-			path := "bin/" + osname + "-" + arch + "/" + name
-			files[path] = []byte(path)
-			sum := sha256.Sum256(files[path])
-			checks[path] = hex.EncodeToString(sum[:])
+			target := osname + "-" + arch
+			binary := filepath.Join(pkg+"-platforms", target, "bin", name)
+			if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(binary, []byte(target), 0644); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256([]byte(target))
+			checks[target] = hex.EncodeToString(sum[:])
 		}
 	}
 	writeCandidate := func() string {
@@ -83,7 +89,7 @@ func TestVerifyCandidate(t *testing.T) {
 	if err := verifyCandidate(pkg, archive, sha); err == nil {
 		t.Fatal("accepted modified extracted package")
 	}
-	checks["bin/linux-amd64/ghship"] = strings.Repeat("0", 64)
+	checks["linux-x64"] = strings.Repeat("0", 64)
 	sha = writeCandidate()
 	if err := verifyCandidate(pkg, archive, sha); err == nil {
 		t.Fatal("accepted candidate whose binary disagrees with its checksum")

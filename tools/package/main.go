@@ -75,8 +75,22 @@ func build() error {
 			if target == "windows" {
 				name += ".exe"
 			}
-			rel := filepath.Join("bin", target+"-"+arch, name)
-			p := filepath.Join(out, rel)
+			npmOS, npmArch := target, arch
+			if target == "windows" {
+				npmOS = "win32"
+			}
+			if arch == "amd64" {
+				npmArch = "x64"
+			}
+			platform := npmOS + "-" + npmArch
+			platformDir := filepath.Join(out+"-platforms", platform)
+			if _, e := os.Lstat(platformDir); e == nil {
+				return fmt.Errorf("output exists: %s; choose a fresh directory", platformDir)
+			} else if !os.IsNotExist(e) {
+				return e
+			}
+			rel := filepath.Join("bin", name)
+			p := filepath.Join(platformDir, rel)
 			if e := os.MkdirAll(filepath.Dir(p), 0o755); e != nil {
 				return e
 			}
@@ -92,7 +106,22 @@ func build() error {
 				return e
 			}
 			h := sha256.Sum256(b)
-			sums[filepath.ToSlash(rel)] = hex.EncodeToString(h[:])
+			sums[platform] = hex.EncodeToString(h[:])
+			metadata := map[string]any{"name": "@ghship/cli-" + platform, "version": pkg.Version, "os": []string{npmOS}, "cpu": []string{npmArch}, "files": []string{"bin", "README.md"}, "license": "MIT", "repository": map[string]string{"type": "git", "url": "https://github.com/ghship/cli.git"}}
+			manifest, e := json.MarshalIndent(metadata, "", "  ")
+			if e != nil {
+				return e
+			}
+			if e = os.WriteFile(filepath.Join(platformDir, "package.json"), manifest, 0o644); e != nil {
+				return e
+			}
+			readme, e := os.ReadFile(filepath.Join("npm", "README.md"))
+			if e != nil {
+				return e
+			}
+			if e = os.WriteFile(filepath.Join(platformDir, "README.md"), readme, 0o644); e != nil {
+				return e
+			}
 		}
 	}
 	b, e := json.MarshalIndent(sums, "", "  ")

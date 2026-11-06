@@ -41,11 +41,11 @@ func run() error {
 	env := []string{}
 	for _, v := range os.Environ() {
 		k := strings.ToUpper(strings.SplitN(v, "=", 2)[0])
-		if k != "HOME" && k != "USERPROFILE" && k != "LOCALAPPDATA" && k != "APPDATA" && k != "NPM_CONFIG_PREFIX" && k != "NPM_CONFIG_CACHE" {
+		if k != "HOME" && k != "USERPROFILE" && k != "LOCALAPPDATA" && k != "APPDATA" && k != "NPM_CONFIG_PREFIX" && k != "NPM_CONFIG_CACHE" && k != "NPM_CONFIG_REGISTRY" && k != "NPM_CONFIG_USERCONFIG" {
 			env = append(env, v)
 		}
 	}
-	env = append(env, "HOME="+home, "USERPROFILE="+home, "LOCALAPPDATA="+filepath.Join(home, "local"), "npm_config_cache="+filepath.Join(tmp, "cache"), "APPDATA="+filepath.Join(home, "AppData"), "npm_config_prefix="+filepath.Join(tmp, "global"))
+	env = append(env, "HOME="+home, "USERPROFILE="+home, "LOCALAPPDATA="+filepath.Join(home, "local"), "npm_config_cache="+filepath.Join(tmp, "pack-cache"), "APPDATA="+filepath.Join(home, "AppData"), "npm_config_prefix="+filepath.Join(tmp, "global"))
 	command := func(name string, args ...string) ([]byte, error) {
 		return runCommand(env, name, args...)
 	}
@@ -60,6 +60,12 @@ func run() error {
 		cli := filepath.Join(filepath.Dir(p), "node_modules", "npm", "bin", "npm-cli.js")
 		return command("node", append([]string{cli}, args...)...)
 	}
+	registry, e := startRegistry(pkg+"-platforms", tmp, npm)
+	if e != nil {
+		return e
+	}
+	defer registry.server.Close()
+	env = append(env, "npm_config_cache="+filepath.Join(tmp, "install-cache"), "npm_config_registry="+registry.server.URL, "npm_config_userconfig="+filepath.Join(tmp, "npmrc"), "npm_config_audit=false", "npm_config_fund=false")
 	// With an external candidate, inspect and exercise the exact same tarball.
 	// The CI job verifies its SHA-256 before extracting pkg.
 	tarball := ""
@@ -93,6 +99,16 @@ func run() error {
 	if tarball == "" {
 		tarball = filepath.Join(tmp, packs[0].Filename)
 	}
+	omitDir := filepath.Join(tmp, "omit-optional")
+	if _, e = npm("install", "--prefix", omitDir, "--omit=optional", "--ignore-scripts", tarball); e != nil {
+		return e
+	}
+	omitLauncher := filepath.Join(omitDir, "node_modules", "@ghship", "cli", "run.cjs")
+	omitOutput, omitErr := command("node", omitLauncher, "version")
+	if e = expectRefusal(omitOutput, omitErr, 1, "is missing; enable optional dependencies"); e != nil {
+		return fmt.Errorf("omitted platform package: %w", e)
+	}
+	fmt.Println("PASS omitted optional platform dependency explains how to recover")
 	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp)
 	if e != nil {
 		return e
@@ -229,7 +245,15 @@ func run() error {
 		}
 		return os.WriteFile(manifest, original, 0644)
 	}
-	candidateBinary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary))
+	npmOS, npmArch := runtime.GOOS, runtime.GOARCH
+	if npmOS == "windows" {
+		npmOS = "win32"
+	}
+	if npmArch == "amd64" {
+		npmArch = "x64"
+	}
+	target := npmOS + "-" + npmArch
+	candidateBinary := filepath.Join(pkg+"-platforms", target, "bin", filepath.Base(fixtureBinary))
 	checkBinary := func(installed string) error {
 		want, err := os.ReadFile(candidateBinary)
 		if err != nil {
@@ -247,7 +271,11 @@ func run() error {
 			return fmt.Errorf("installed npm CLI version mismatch: %s", b)
 		}
 		if expected == assets.Version {
-			return checkBinary(filepath.Join(filepath.Dir(launcher), "bin", runtime.GOOS+"-"+runtime.GOARCH, filepath.Base(fixtureBinary)))
+			binary, err := command("node", "-e", "process.stdout.write(require(process.argv[1]).binaryPath())", launcher)
+			if err != nil {
+				return fmt.Errorf("installed platform package resolution: %w: %s", err, binary)
+			}
+			return checkBinary(string(binary))
 		}
 		return nil
 	}
@@ -296,6 +324,37 @@ func run() error {
 		return e
 	}
 	fmt.Println("PASS foreign same-name/version global package preserved and rejected")
+	if baseline := os.Getenv("GHSHIP_BASELINE_TARBALL"); baseline != "" {
+		baseline, e = filepath.Abs(baseline)
+		if e != nil {
+			return e
+		}
+		if _, e = npm("exec", "--yes", "--package", baseline, "--", "ghship", "install", "--package-source", baseline, "--user-only", "--json"); e != nil {
+			return fmt.Errorf("released baseline install: %w", e)
+		}
+		if e = checkNpmVersion("1.0.2"); e != nil {
+			return e
+		}
+		if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json"); e != nil {
+			return fmt.Errorf("released baseline update: %w", e)
+		}
+		if e = checkNpmVersion(assets.Version); e != nil {
+			return e
+		}
+		if e = verifyInstalledSkill(home, assets.Version); e != nil {
+			return e
+		}
+		if e = checkPreserved(); e != nil {
+			return e
+		}
+		if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+			return e
+		}
+		if e = checkUninstalled(launcher); e != nil {
+			return e
+		}
+		fmt.Println("PASS real 1.0.2 npm installation to split candidate")
+	}
 	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "install", "--package-source", fixtureTar, "--user-only", "--json"); e != nil {
 		return e
 	}
@@ -366,7 +425,7 @@ func run() error {
 	}
 	if e = refused(func() ([]byte, error) {
 		return npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "update", "--package-source", fixtureTar, "--json")
-	}, "downgrade refused"); e != nil {
+	}, "ENOENT"); e != nil {
 		return fmt.Errorf("npm downgrade: %w", e)
 	}
 	if e = checkNpmVersion(assets.Version); e != nil {
@@ -438,7 +497,7 @@ func run() error {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	binary := filepath.Join(pkg, "bin", runtime.GOOS+"-"+runtime.GOARCH, name)
+	binary := candidateBinary
 	installedBinary := filepath.Join(standaloneDir, name)
 	checkStandaloneVersion := func(expected string) error {
 		b, err := command(installedBinary, "version")
@@ -627,6 +686,10 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
+	if e = registry.assertDownloads(target); e != nil {
+		return e
+	}
+	fmt.Println("PASS only matching platform binary downloaded")
 	fmt.Println("PASS real npm tarball and standalone lifecycle; temporary home only")
 	return nil
 }
