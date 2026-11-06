@@ -51,7 +51,7 @@ jobs:
         shell: bash
       - run: go vet ./...
       - run: go test ./... -count=1
-      - run: node --test npm/test.cjs npm/platform.test.cjs tools/release/publish.test.cjs
+      - run: node --test npm/test.cjs npm/platform.test.cjs tools/release/publish.test.cjs tools/release/unpack.test.cjs
       - name: Download shared candidate
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
