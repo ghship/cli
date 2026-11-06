@@ -73,7 +73,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		if e = validateManaged(dir, m); e != nil {
 			return e
 		}
-		if !standalone && m.Binary != nil {
+		if !standalone && m.Binary != nil && !check {
 			return errors.New("standalone installation exists; cannot overwrite with npm")
 		}
 	} else {
@@ -84,7 +84,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		}
 	}
 	if check {
-		return emitResult(out, true, map[string]any{"managed": managed, "version": m.Version, "targetVersion": version})
+		return emitResult(out, true, map[string]any{"managed": managed, "standalone": managed && m.Binary != nil, "version": m.Version, "targetVersion": version})
 	}
 	if action == "uninstall" && !managed {
 		return emitResult(out, true, map[string]any{"action": "uninstall", "alreadyAbsent": true})

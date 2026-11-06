@@ -10,6 +10,9 @@ installation. Project workflows need Git and a gh with native Issue relationship
 
 Update/uninstall via external `npx @ghship/cli@latest update|uninstall`. Project lifecycle:
 `ghship project install|status|update|uninstall`; custom `.ghship/skill.md` is preserved.
+Install and update also update a verified standalone installation in place, keeping its
+channel and paths. To uninstall a standalone installation, use a separate downloaded
+executable with `uninstall --standalone`.
 Users: `ghship user add|update|delete|list`; list validates tokens and reports actual
 expiry when GitHub returns it, otherwise unknown. Tokens never belong in projects.
 

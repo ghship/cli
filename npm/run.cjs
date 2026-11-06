@@ -87,8 +87,18 @@ function lifecycle(executable,args) {
   else throw new Error(`Unknown lifecycle option: ${arg}; use ghship help install`);
  }
  const preflight=go(executable,[action,'--skill-only','--check',...lifecycleArgs,'--json'],true);if(preflight.code!==0)return preflight.code;
+ const state=JSON.parse(preflight.stdout);
  const installed=JSON.parse(npm(['list','-g',meta.name,'--depth=0','--json'],true));
  const existing=installed.dependencies && installed.dependencies[meta.name];
+ if(state.standalone) {
+  if(action==='uninstall')throw new Error('Standalone installation exists; uninstall with a separate downloaded executable and --standalone');
+  if(existing)throw new Error('Standalone and npm installations both exist; inspect both before updating');
+  const args=[action,'--standalone',...lifecycleArgs,...(userOnly?['--user-only']:[]),...initArgs.filter(arg=>arg!=='--json'),'--json'];
+  const result=go(executable,args,true,action==='install'&&!userOnly);
+  if(action==='install'&&!userOnly) {if(result.stdout)process.stdout.write(result.stdout);return result.code;}
+  if(result.code!==0)return result.code;
+  console.log(JSON.stringify({userInstalled:true,version:meta.version,projectInitialized:false}));return 0;
+ }
  const root=path.resolve(npm(['root','-g'],true).trim());
  const receipt=packageReceipt(root);noLinks(receipt);
  if(!existing&&action!=='uninstall'&&fs.existsSync(receipt))throw new Error('Installation receipt exists without its package; preserved');

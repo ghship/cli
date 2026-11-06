@@ -462,6 +462,65 @@ func run() error {
 	if e = checkProject(installedBinary); e != nil {
 		return e
 	}
+	if b, err := command(installedBinary, "update"); expectRefusal(b, err, 4, "npx @ghship/cli@latest update") != nil {
+		return fmt.Errorf("standalone update guidance missing: %s", b)
+	}
+	npxStandaloneUpdate := func() ([]byte, error) {
+		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json")
+	}
+	if e = testSkillConflicts(npxStandaloneUpdate); e != nil {
+		return fmt.Errorf("npx standalone conflict: %w", e)
+	}
+	originalBinary, e := os.ReadFile(installedBinary)
+	if e != nil {
+		return e
+	}
+	if e = os.WriteFile(installedBinary, []byte("modified executable"), 0755); e != nil {
+		return e
+	}
+	if e = refused(npxStandaloneUpdate, "installed executable missing or modified; preserved"); e != nil {
+		return fmt.Errorf("npx standalone modified executable: %w", e)
+	}
+	if e = os.WriteFile(installedBinary, originalBinary, 0755); e != nil {
+		return e
+	}
+	if _, e = npm("install", "-g", fixtureTar, "--ignore-scripts"); e != nil {
+		return e
+	}
+	if e = refused(npxStandaloneUpdate, "Standalone and npm installations both exist; inspect both before updating"); e != nil {
+		return fmt.Errorf("npx ambiguous installation: %w", e)
+	}
+	if _, e = npm("uninstall", "-g", "@ghship/cli"); e != nil {
+		return e
+	}
+	if e = refused(func() ([]byte, error) {
+		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json")
+	}, "Standalone installation exists; uninstall with a separate downloaded executable and --standalone"); e != nil {
+		return fmt.Errorf("npx standalone uninstall: %w", e)
+	}
+	// A standalone user must be able to use the documented npx entry without
+	// replacing the installation channel or losing their managed files.
+	for _, action := range []string{"update", "install"} {
+		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--user-only", "--json"}
+		if b, e = npm(args...); e != nil {
+			return fmt.Errorf("npx %s of standalone installation: %w: %s", action, e, b)
+		}
+		if e = checkStandaloneVersion(assets.Version); e != nil {
+			return e
+		}
+		if e = verifyInstalledSkill(home, assets.Version); e != nil {
+			return e
+		}
+		if e = checkProject(installedBinary); e != nil {
+			return e
+		}
+	}
+	if e = refused(func() ([]byte, error) {
+		return npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "update", "--package-source", fixtureTar, "--json")
+	}, "downgrade refused"); e != nil {
+		return fmt.Errorf("npx standalone downgrade: %w", e)
+	}
+	fmt.Println("PASS npx standalone update, reinstall, conflict and downgrade protections")
 	for i := 0; i < 2; i++ {
 		if _, e = command(binary, "update", "--standalone", "--user-only", "--json"); e != nil {
 			return e

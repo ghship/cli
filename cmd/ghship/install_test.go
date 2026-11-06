@@ -85,6 +85,31 @@ func TestStandaloneLifecycle(t *testing.T) {
 		t.Fatal("binary remains")
 	}
 }
+
+func TestStandalonePreflightReportsChannelWithoutChangingIt(t *testing.T) {
+	d := installDir(t)
+	bin := filepath.Join(filepath.Dir(d), "custom-bin")
+	if e := lifecycle("install", []string{"--dir", d, "--bin-dir", bin, "--standalone", "--json"}, &bytes.Buffer{}); e != nil {
+		t.Fatal(e)
+	}
+	var output bytes.Buffer
+	if e := lifecycleEntry("update", []string{"--dir", d, "--skill-only", "--check", "--json"}, nil, &output); e != nil {
+		t.Fatal(e)
+	}
+	var state struct {
+		Managed    bool `json:"managed"`
+		Standalone bool `json:"standalone"`
+	}
+	if e := json.Unmarshal(output.Bytes(), &state); e != nil || !state.Managed || !state.Standalone {
+		t.Fatalf("unexpected preflight state %s: %v", output.String(), e)
+	}
+	if e := lifecycleEntry("update", []string{"--dir", d, "--skill-only", "--json"}, nil, &bytes.Buffer{}); e == nil {
+		t.Fatal("skill-only update crossed standalone channel")
+	}
+	if e := lifecycle("update", []string{"--dir", d, "--standalone", "--json"}, &bytes.Buffer{}); e != nil {
+		t.Fatalf("preflight changed standalone installation: %v", e)
+	}
+}
 func TestReplacementRollback(t *testing.T) {
 	d := installDir(t)
 	os.MkdirAll(d, 0o755)
