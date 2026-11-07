@@ -120,6 +120,12 @@ type cliError struct {
 func (e cliError) Error() string { return e.err.Error() }
 func usage(s string) error       { return cliError{2, errors.New(s)} }
 func main() {
+	if len(os.Args) == 1 && os.Getenv("GHSHIP_INTERNAL_BACKUP_CLEANUP") == "1" {
+		if err := runDeferredBackupCleanup([]string{os.Getenv("GHSHIP_CLEANUP_PARENT"), os.Getenv("GHSHIP_CLEANUP_PATH"), os.Getenv("GHSHIP_CLEANUP_HASH")}); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	operationContext = ctx

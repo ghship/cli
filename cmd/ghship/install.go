@@ -32,9 +32,11 @@ without changing its installation channel. Npm uninstall manages npm installs;
 use a separate downloaded executable with --standalone for standalone uninstall.
 Updates/uninstalls require managed unchanged files, preserve users/projects,
 refuse symlinks, unknown content and downgrades; stage and recover on failure.
-Windows standalone update/uninstall: run from a separate downloaded executable.
+The standalone ghship update fetches the matching platform package from the npm
+registry and verifies it; Node/npm are not required. A separate downloaded
+executable can also update or uninstall with --standalone.
 The npm-installed ghship update uses npm to run the latest published version.
-Npm uninstall uses an external npx entry; the standalone Go CLI returns 4.
+Npm uninstall uses an external npx entry.
 Install is idempotent for managed installations; unknown destinations preserved.
 Coordinator flags --skill-only and --check are for bundled-skill operations:
 --check validates ownership without writing; neither implies project readiness.
@@ -175,7 +177,16 @@ type replacement struct {
 	expected            *bool
 }
 
-func commitReplacements(items []replacement) error {
+type pendingBackupError struct {
+	path  string
+	cause error
+}
+
+func (e pendingBackupError) Error() string {
+	return fmt.Sprintf("old binary retained at %s: %v", e.path, e.cause)
+}
+
+func commitReplacements(items []replacement, deferBinary ...string) error {
 	rollback := func(end int) error {
 		var errs []error
 		for i := end; i >= 0; i-- {
@@ -223,7 +234,10 @@ func commitReplacements(items []replacement) error {
 	}
 	for _, x := range items {
 		if x.backup != "" {
-			if e := os.RemoveAll(x.backup); e != nil {
+			if e := removeBackup(x.backup); e != nil {
+				if runtime.GOOS == "windows" && len(deferBinary) == 1 && deferBinary[0] != "" && x.dest == deferBinary[0] && canDeferBackup(e) {
+					return pendingBackupError{path: x.backup, cause: e}
+				}
 				return fmt.Errorf("operation completed; old data retained at %s: %w", x.backup, e)
 			}
 		}
@@ -439,7 +453,12 @@ func lifecycle(action string, a []string, out io.Writer) error {
 			return e
 		}
 	}
-	if e = commitReplacements(items); e != nil {
+	deferBinary := ""
+	if runtime.GOOS == "windows" && action == "update" && standalone && os.Getenv("GHSHIP_DIRECT_UPDATE_PENDING_CLEANUP") == "1" {
+		deferBinary = binaryPath
+	}
+	var pending pendingBackupError
+	if e = commitReplacements(items, deferBinary); e != nil && !errors.As(e, &pending) {
 		return e
 	}
 	result := map[string]string{"action": action, "directory": dir, "version": version}
@@ -447,12 +466,18 @@ func lifecycle(action string, a []string, out io.Writer) error {
 		result["binary"] = binaryPath
 		result["pathHint"] = filepath.Dir(binaryPath)
 	}
+	if pending.path != "" {
+		result["pendingBackup"] = pending.path
+	}
 	if asJSON {
 		return json.NewEncoder(out).Encode(result)
 	}
 	fmt.Fprintf(out, "%s: %s (%s)\n", action, dir, version)
 	if standalone {
 		fmt.Fprintf(out, "CLI: %s; add %s to PATH if needed\n", binaryPath, filepath.Dir(binaryPath))
+	}
+	if pending.path != "" {
+		fmt.Fprintf(out, "Previous executable retained for cleanup: %s\n", pending.path)
 	}
 	return nil
 }

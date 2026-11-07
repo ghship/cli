@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -16,11 +17,13 @@ import (
 // registry serves only the exact local platform tarballs. It records every
 // tarball request so the test can distinguish metadata from binary downloads.
 type registry struct {
-	server       *httptest.Server
-	mu           sync.Mutex
-	downloads    map[string]int
-	registerMain func(string, string) error
-	swapPlatform func(string, string) (func(), error)
+	server             *httptest.Server
+	mu                 sync.Mutex
+	downloads          map[string]int
+	registerMain       func(string, string) error
+	swapPlatform       func(string, string) (func(), error)
+	setMainFailure     func(string) func()
+	setPlatformFailure func(string) func()
 }
 
 func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*registry, error) {
@@ -65,6 +68,22 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		packages[name] = item{meta: meta, data: data}
 	}
 	r := &registry{downloads: map[string]int{}}
+	mainFailure := ""
+	platformFailure := ""
+	r.setPlatformFailure = func(value string) func() {
+		r.mu.Lock()
+		previous := platformFailure
+		platformFailure = value
+		r.mu.Unlock()
+		return func() { r.mu.Lock(); platformFailure = previous; r.mu.Unlock() }
+	}
+	r.setMainFailure = func(value string) func() {
+		r.mu.Lock()
+		previous := mainFailure
+		mainFailure = value
+		r.mu.Unlock()
+		return func() { r.mu.Lock(); mainFailure = previous; r.mu.Unlock() }
+	}
 	r.swapPlatform = func(dir, archive string) (func(), error) {
 		b, err := os.ReadFile(filepath.Join(dir, "package.json"))
 		if err != nil {
@@ -124,6 +143,7 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			}
 			r.mu.Lock()
 			item, ok := packages[name]
+			failure := platformFailure
 			if ok && name != "@ghship/cli" {
 				r.downloads[name]++
 			}
@@ -133,12 +153,50 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 				return
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
+			if name != "@ghship/cli" && failure == "truncate" {
+				w.Header().Set("Content-Length", strconv.Itoa(len(item.data)))
+				_, _ = w.Write(item.data[:min(1024, len(item.data))])
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				if h, ok := w.(http.Hijacker); ok {
+					c, _, err := h.Hijack()
+					if err == nil {
+						_ = c.Close()
+					}
+				}
+				return
+			}
 			_, _ = w.Write(item.data)
 			return
 		}
+		requestedVersion := ""
+		if i := strings.LastIndex(name, "/"); i > 0 && strings.Contains(name[:i], "/") {
+			requestedVersion, name = name[i+1:], name[:i]
+		}
 		r.mu.Lock()
+		failure := mainFailure
 		item, ok := packages[name]
 		r.mu.Unlock()
+		if name == "@ghship/cli" && requestedVersion == "latest" {
+			if failure == "disconnect" {
+				if h, ok := w.(http.Hijacker); ok {
+					c, _, err := h.Hijack()
+					if err == nil {
+						_ = c.Close()
+					}
+					return
+				}
+			}
+			if failure == "unavailable" {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if failure == "redirect" {
+				http.Redirect(w, req, "https://example.com/untrusted", http.StatusFound)
+				return
+			}
+		}
 		if !ok {
 			http.NotFound(w, req)
 			return
@@ -148,6 +206,10 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			meta[k] = v
 		}
 		version := meta["version"].(string)
+		if requestedVersion != "" && requestedVersion != "latest" && requestedVersion != version {
+			http.NotFound(w, req)
+			return
+		}
 		sum := sha512.Sum512(item.data)
 		target := strings.TrimPrefix(name, "@ghship/cli-")
 		if name == "@ghship/cli" {
@@ -155,6 +217,10 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		}
 		meta["dist"] = map[string]string{"tarball": r.server.URL + "/tarballs/" + target + ".tgz", "integrity": "sha512-" + base64.StdEncoding.EncodeToString(sum[:])}
 		w.Header().Set("Content-Type", "application/json")
+		if requestedVersion != "" {
+			_ = json.NewEncoder(w).Encode(meta)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": name, "dist-tags": map[string]string{"latest": version}, "versions": map[string]any{version: meta}})
 	}))
 	return r, nil

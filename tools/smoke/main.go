@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -112,7 +113,7 @@ func run() error {
 		return fmt.Errorf("omitted platform package: %w", e)
 	}
 	fmt.Println("PASS omitted optional platform dependency explains how to recover")
-	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp)
+	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp, registry.server.URL)
 	if e != nil {
 		return e
 	}
@@ -597,8 +598,147 @@ func run() error {
 	if e = checkProject(installedBinary); e != nil {
 		return e
 	}
-	if b, err := command(installedBinary, "update"); expectRefusal(b, err, 4, "npx @ghship/cli@latest update") != nil {
-		return fmt.Errorf("standalone update guidance missing: %s", b)
+	standaloneEnv := append(append([]string{}, env...), "PATH="+filepath.Join(tmp, "empty-path"))
+	for _, failure := range []string{"disconnect", "redirect"} {
+		restore := registry.setMainFailure(failure)
+		err := refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "cannot download update")
+		restore()
+		if err != nil {
+			return fmt.Errorf("standalone %s failure preservation: %w", failure, err)
+		}
+	}
+	restoreTruncated := registry.setPlatformFailure("truncate")
+	truncatedErr := refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "unexpected EOF")
+	restoreTruncated()
+	if truncatedErr != nil {
+		return fmt.Errorf("standalone interrupted platform download preservation: %w", truncatedErr)
+	}
+	invalidTemp := filepath.Join(tmp, "not-a-directory")
+	if e = os.WriteFile(invalidTemp, []byte("not a directory"), 0600); e != nil {
+		return e
+	}
+	writeFailureEnv := append(append([]string{}, standaloneEnv...), "TMPDIR="+invalidTemp, "TMP="+invalidTemp, "TEMP="+invalidTemp)
+	if e = refused(func() ([]byte, error) { return runCommand(writeFailureEnv, installedBinary, "update", "--json") }, "not-a-directory"); e != nil {
+		return fmt.Errorf("standalone temporary write failure preservation: %w", e)
+	}
+	parent := filepath.Dir(skillDir)
+	targetPermissionChecked := false
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		info, err := os.Stat(parent)
+		if err != nil {
+			return err
+		}
+		if err = os.Chmod(parent, 0555); err != nil {
+			return err
+		}
+		err = refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "permission denied")
+		restoreErr := os.Chmod(parent, info.Mode().Perm())
+		if err != nil {
+			return fmt.Errorf("direct standalone target permission: %w", err)
+		}
+		if restoreErr != nil {
+			return restoreErr
+		}
+		targetPermissionChecked = true
+	}
+	if runtime.GOOS == "windows" {
+		if err := withDeniedDirectoryCreate(parent, func() error {
+			return refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "Access is denied")
+		}); err != nil {
+			return fmt.Errorf("direct standalone target ACL: %w", err)
+		}
+		targetPermissionChecked = true
+	}
+	fmt.Println("PASS direct standalone interrupted download preserves installation")
+	if targetPermissionChecked {
+		fmt.Println("PASS direct standalone target permission denial preserves installation")
+	} else {
+		fmt.Println("SKIP direct standalone target permission denial when running as root")
+	}
+	// A registry can return a well-formed platform tarball with a valid SRI
+	// that nevertheless does not match the candidate main package's checksum.
+	// Preserve every installed file on that mismatch.
+	platformMetaPath := filepath.Join(olderPlatformDir, "package.json")
+	platformMetaBytes, e := os.ReadFile(platformMetaPath)
+	if e != nil {
+		return e
+	}
+	var wrongPlatformMeta map[string]any
+	if e = json.Unmarshal(platformMetaBytes, &wrongPlatformMeta); e != nil {
+		return e
+	}
+	wrongPlatformMeta["version"] = assets.Version
+	platformMetaBytes, e = json.Marshal(wrongPlatformMeta)
+	if e != nil {
+		return e
+	}
+	if e = os.WriteFile(platformMetaPath, platformMetaBytes, 0644); e != nil {
+		return e
+	}
+	wrongPack, e := npm("pack", olderPlatformDir, "--json", "--pack-destination", olderPlatformDir)
+	if e != nil {
+		return e
+	}
+	wrongRecord, e := parseNpmPack(wrongPack, wrongPlatformMeta["name"].(string))
+	if e != nil {
+		return e
+	}
+	restoreWrong, e := registry.swapPlatform(olderPlatformDir, filepath.Join(olderPlatformDir, wrongRecord.Filename))
+	if e != nil {
+		return e
+	}
+	defer restoreWrong()
+	if e = refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "update binary checksum mismatch"); e != nil {
+		return e
+	}
+	restoreWrong()
+	if b, e = runCommand(standaloneEnv, installedBinary, "update", "--json"); e != nil {
+		return fmt.Errorf("direct standalone upgrade: %w: %s", e, b)
+	}
+	if runtime.GOOS == "windows" {
+		var result map[string]string
+		if json.Unmarshal(b, &result) != nil || result["pendingBackup"] == "" || !strings.Contains(result["cleanup"], "scheduled") || !strings.Contains(result["cleanup"], "may remain") {
+			return fmt.Errorf("Windows update did not report pending cleanup: %s", b)
+		}
+		if filepath.Dir(result["pendingBackup"]) != standaloneDir || !strings.HasPrefix(filepath.Base(result["pendingBackup"]), ".ghship-backup-") {
+			return fmt.Errorf("Windows update reported invalid backup path")
+		}
+	}
+	if e = checkStandaloneVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	for attempt := 0; ; attempt++ {
+		entries, err := os.ReadDir(standaloneDir)
+		if err != nil {
+			return err
+		}
+		pending := ""
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".ghship-backup-") {
+				pending = entry.Name()
+				break
+			}
+		}
+		if pending == "" {
+			break
+		}
+		if attempt == 100 {
+			return fmt.Errorf("direct standalone update left a backup: %s", pending)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	fmt.Println("PASS direct standalone upgrade without Node or npm")
+	if _, e = command(binary, "uninstall", "--standalone", "--json"); e != nil {
+		return e
+	}
+	if _, e = command(fixtureBinary, "install", "--standalone", "--user-only", "--json"); e != nil {
+		return e
 	}
 	npxStandaloneUpdate := func() ([]byte, error) {
 		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json")

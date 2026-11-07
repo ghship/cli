@@ -100,6 +100,8 @@ Milestone 的 Issue 完成比例不等于产品验收。最终对照开发文档
 
 ## 更新与卸载
 
+通过 npm 安装后可使用 `ghship update`；也可使用下方 npm 入口更新或卸载。
+
 ```sh
 npx @ghship/cli@latest update
 ghship project update --project /work/product
@@ -115,7 +117,7 @@ ghship project uninstall --binding-only --project /old/missing/path
 ghship user delete --user developer
 ```
 
-直接下载渠道：新版下载二进制 `update --standalone`，另一个下载二进制 `uninstall --standalone`。未知目录、修改过的管理文件、版本降级拒绝覆盖/删除。项目文件变化需评审提交，本地卸载成功不表示远程已合并。
+支持直接更新的独立安装可运行 `ghship update`：程序从官方 npm registry 获取并校验当前平台二进制，无需 Node/npm。也可使用新版下载二进制 `update --standalone`，或另一个下载二进制 `uninstall --standalone`。未知目录、修改过的管理文件、版本降级拒绝覆盖/删除。项目文件变化需评审提交，本地卸载成功不表示远程已合并。
 
 ## AI 帮助与开发
 

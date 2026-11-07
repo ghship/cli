@@ -16,7 +16,7 @@ import (
 // buildFixture builds an internally consistent, synthetic older GHShip from the
 // current sources. The Go overlay replaces only version metadata; it never
 // modifies the checkout and is not a claim that this version was released.
-func buildFixture(pkg, tmp string) (string, string, error) {
+func buildFixture(pkg, tmp, registryURL string) (string, string, error) {
 	const oldVersion = "0.0.1"
 	if assets.Version == oldVersion {
 		return "", "", fmt.Errorf("fixture version must differ")
@@ -79,7 +79,7 @@ func buildFixture(pkg, tmp string) (string, string, error) {
 	if err = os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
 		return "", "", err
 	}
-	c := exec.Command("go", "build", "-trimpath", "-overlay", overlayPath, "-o", binary, "./cmd/ghship")
+	c := exec.Command("go", "build", "-trimpath", "-overlay", overlayPath, "-ldflags", "-X main.standaloneRegistry="+registryURL, "-o", binary, "./cmd/ghship")
 	c.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if b, e := c.CombinedOutput(); e != nil {
 		return "", "", fmt.Errorf("build synthetic baseline: %w: %s", e, b)
