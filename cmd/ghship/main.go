@@ -307,6 +307,27 @@ func currentProjectRoot() (string, error) {
 	return root, nil
 }
 
+// Absence is allowed only for an unbound override; unreadable configuration
+// must not be silently treated as a missing origin.
+func projectOrigin() (string, bool, error) {
+	ctx, stop := context.WithTimeout(operationContext, 30*time.Second)
+	defer stop()
+	cmd := exec.CommandContext(ctx, "git", "config", "--get", "remote.origin.url")
+	_, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 && len(exit.Stderr) == 0 {
+			return "", false, nil
+		}
+		return "", false, errors.New("cannot read project origin")
+	}
+	origin, err := output(nil, "git", "remote", "get-url", "origin")
+	if err != nil {
+		return "", false, errors.New("cannot resolve project origin")
+	}
+	return origin, true, nil
+}
+
 func roleEnvironment(role string) ([]string, error) {
 	var expected, file string
 	switch role {
@@ -334,11 +355,14 @@ func roleEnvironment(role string) ([]string, error) {
 	if bindErr != nil && expected == "" {
 		return nil, errors.New("project role binding unavailable; run ghship init")
 	}
-	origin, originErr := output(nil, "git", "remote", "get-url", "origin")
-	if originErr != nil && bindErr == nil {
+	origin, hasOrigin, originErr := projectOrigin()
+	if originErr != nil {
 		return nil, originErr
 	}
-	if originErr == nil {
+	if !hasOrigin && bindErr == nil {
+		return nil, errors.New("project origin unavailable")
+	}
+	if hasOrigin {
 		repo, err := parseOrigin(origin)
 		if err != nil {
 			return nil, err

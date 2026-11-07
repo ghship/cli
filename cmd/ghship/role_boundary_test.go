@@ -103,3 +103,20 @@ func TestExplicitRolesUseTargetHostAndRejectInvalidBinding(t *testing.T) {
 		t.Fatal("invalid project binding accepted")
 	}
 }
+
+func TestOverrideDistinguishesAbsentOriginFromReadFailure(t *testing.T) {
+	_, _ = fixture(t)
+	setupAuthHome(t)
+	t.Setenv("GHSHIP_DISPATCHER", "dispatcher")
+	t.Setenv("TEST_ACTOR", "dispatcher")
+	t.Setenv("TEST_GIT_ORIGIN_ERROR", "1")
+	if _, err := roleEnvironment("dispatcher"); err == nil {
+		t.Fatal("origin read failure accepted")
+	}
+	t.Setenv("TEST_GIT_ORIGIN_ERROR", "")
+	t.Setenv("TEST_NO_ORIGIN", "1")
+	env, err := roleEnvironment("dispatcher")
+	if err != nil || !slices.Contains(env, "GH_HOST=github.com") {
+		t.Fatalf("unbound repository without origin: %v", err)
+	}
+}
