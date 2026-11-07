@@ -96,6 +96,9 @@ func run() error {
 	if tarball == "" {
 		tarball = filepath.Join(tmp, pack.Filename)
 	}
+	if e = registry.registerMain(pkg, tarball); e != nil {
+		return e
+	}
 	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
 		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)
 	}
@@ -172,6 +175,13 @@ func run() error {
 	launcher := filepath.Join(prefix, "lib", "node_modules", "@ghship", "cli", "run.cjs")
 	if runtime.GOOS == "windows" {
 		launcher = filepath.Join(prefix, "node_modules", "@ghship", "cli", "run.cjs")
+	}
+	invoke := func(a ...string) ([]byte, error) {
+		if runtime.GOOS == "windows" {
+			entry := filepath.Join(tmp, "global", "ghship.cmd")
+			return command("cmd.exe", append([]string{"/d", "/c", entry}, a...)...)
+		}
+		return command(filepath.Join(tmp, "global", "bin", "ghship"), a...)
 	}
 	skillDir := filepath.Join(home, ".agents", "skills", "ghship")
 	standaloneDir := filepath.Join(home, ".local", "bin")
@@ -355,6 +365,44 @@ func run() error {
 		}
 		fmt.Println("PASS real 1.0.2 npm installation to split candidate")
 	}
+	directTar, olderPlatformDir, olderPlatformTar, e := directFixture(pkg, fixtureBinary, tmp, npm)
+	if e != nil {
+		return e
+	}
+	restorePlatform, e := registry.swapPlatform(olderPlatformDir, olderPlatformTar)
+	if e != nil {
+		return e
+	}
+	defer restorePlatform()
+	if b, e = npm("exec", "--yes", "--package", directTar, "--", "ghship", "install", "--package-source", directTar, "--user-only", "--json"); e != nil {
+		return fmt.Errorf("install synthetic direct-update baseline: %w: %s", e, b)
+	}
+	if e = checkNpmVersion("0.0.1"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, "0.0.1"); e != nil {
+		return e
+	}
+	restorePlatform()
+	if b, e = invoke("update", "--json"); e != nil {
+		return fmt.Errorf("direct npm upgrade from older version: %w: %s", e, b)
+	}
+	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+		return e
+	}
+	if e = checkUninstalled(launcher); e != nil {
+		return e
+	}
+	fmt.Println("PASS direct npm upgrade from synthetic older split installation")
 	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "install", "--package-source", fixtureTar, "--user-only", "--json"); e != nil {
 		return e
 	}
@@ -460,12 +508,40 @@ func run() error {
 			return e
 		}
 	}
-	invoke := func(a ...string) ([]byte, error) { return command("node", append([]string{launcher}, a...)...) }
 	b, e = invoke("version")
 	if e != nil {
 		return e
 	}
 	fmt.Printf("PASS npm version: %s", b)
+	if b, e = invoke("update", "--json"); e != nil {
+		return fmt.Errorf("direct npm update: %w: %s", e, b)
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if e = testSkillConflicts(func() ([]byte, error) { return invoke("update", "--json") }); e != nil {
+		return fmt.Errorf("direct npm update conflict: %w", e)
+	}
+	failNpm := filepath.Join(tmp, "fail-npm.cjs")
+	if e = os.WriteFile(failNpm, []byte("console.error('simulated npm failure');process.exit(7);"), 0o644); e != nil {
+		return e
+	}
+	beforeFailure, e := snapshotTrees(protected...)
+	if e != nil {
+		return e
+	}
+	failedEnv := append(append([]string{}, env...), "npm_execpath="+failNpm)
+	failedOutput, failedErr := runCommand(failedEnv, "node", launcher, "update", "--json")
+	if e = expectRefusal(failedOutput, failedErr, 7, "simulated npm failure"); e != nil {
+		return e
+	}
+	if e = unchangedTrees(beforeFailure, protected...); e != nil {
+		return e
+	}
+	fmt.Println("PASS direct npm update from installed launcher")
 	for _, action := range []string{"update", "uninstall"} {
 		b, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--json")
 		if e != nil {

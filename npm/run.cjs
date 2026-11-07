@@ -151,7 +151,14 @@ if(require.main===module) {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');
   const args=process.argv.slice(2);const action=args[0];
   if(['install','update','uninstall'].includes(action)&&!args.includes('--standalone')&&!args.includes('--skill-only')&&!args.includes('--help')){
-   if(action!=='install'&&process.env.npm_command!=='exec') {console.error(`Run npx @ghship/cli@latest ${action} from an external npm entry`);process.exitCode=4;}
+   if(action==='update'&&process.env.npm_command!=='exec') {
+    const [command,base]=npmCommand();
+    const result=spawnSync(command,[...base,'exec','--yes','--package','@ghship/cli@latest','--','ghship',...args],{stdio:'inherit'});
+    if(result.error)throw new Error('Cannot start npm to update GHShip');
+    if(result.signal)process.kill(process.pid,result.signal);
+    else process.exitCode=result.status===null?1:result.status;
+   }
+   else if(action==='uninstall'&&process.env.npm_command!=='exec') {console.error(`Run npx @ghship/cli@latest ${action} from an external npm entry`);process.exitCode=4;}
    else process.exitCode=lifecycle(executable,args);
   } else {
    const child=spawn(executable,args,{stdio:'inherit'});child.on('error',()=>{console.error('Cannot start Go CLI');process.exitCode=1});child.on('exit',(code,signal)=>{if(signal)process.kill(process.pid,signal);else process.exitCode=code===null?1:code});
