@@ -235,7 +235,7 @@ func commitReplacements(items []replacement, deferBinary ...string) error {
 	for _, x := range items {
 		if x.backup != "" {
 			if e := removeBackup(x.backup); e != nil {
-				if runtime.GOOS == "windows" && len(deferBinary) == 1 && deferBinary[0] != "" && x.dest == deferBinary[0] && errors.Is(e, os.ErrPermission) {
+				if runtime.GOOS == "windows" && len(deferBinary) == 1 && deferBinary[0] != "" && x.dest == deferBinary[0] && canDeferBackup(e) {
 					return pendingBackupError{path: x.backup, cause: e}
 				}
 				return fmt.Errorf("operation completed; old data retained at %s: %w", x.backup, e)

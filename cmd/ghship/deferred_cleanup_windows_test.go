@@ -92,6 +92,9 @@ func TestDeferredCleanupPreservesFileWithCompetingHandles(t *testing.T) {
 			if err = runDeferredBackupCleanup([]string{"4294967295", path, hex.EncodeToString(sum[:])}); err == nil {
 				t.Fatal("cleanup accepted competing handle")
 			}
+			if err = removeBackup(path); err == nil {
+				t.Fatal("immediate cleanup accepted competing handle")
+			}
 			if mode == "write" {
 				var written uint32
 				if err = windows.WriteFile(h, []byte("changed"), &written, nil); err != nil {
