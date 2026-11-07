@@ -308,6 +308,15 @@ func project(args []string, in io.Reader, out io.Writer) error {
 	if e := f.Parse(args[1:]); e != nil || f.NArg() != 0 {
 		return usage("invalid project arguments")
 	}
+	inapplicable := false
+	f.Visit(func(value *flag.Flag) {
+		if value.Name == "binding-only" && args[0] != "uninstall" {
+			inapplicable = true
+		}
+	})
+	if inapplicable {
+		return usage("--binding-only is only valid for project uninstall")
+	}
 	if args[0] == "uninstall" && *only {
 		return initialize([]string{"--project", *path, "--remove-binding", "--json"}, nil, out)
 	}
@@ -454,6 +463,17 @@ func projectSkill(args []string, out io.Writer) error {
 	j := f.Bool("json", false, "JSON")
 	if e := f.Parse(args); e != nil || f.NArg() != 0 || *show == *create {
 		return usage("choose project skill --show or --create")
+	}
+	if *show {
+		inapplicable := false
+		f.Visit(func(value *flag.Flag) {
+			if value.Name == "mode" || value.Name == "overrides" {
+				inapplicable = true
+			}
+		})
+		if inapplicable {
+			return usage("--mode and --overrides require project skill --create")
+		}
 	}
 	root, e := projectRoot(*path)
 	if e != nil {
