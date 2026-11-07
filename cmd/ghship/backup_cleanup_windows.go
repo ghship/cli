@@ -26,7 +26,7 @@ func removeBackup(path string) error {
 			return fmt.Errorf("%w; backup path: %v", err, statErr)
 		}
 		h, statErr := windows.CreateFile(name, windows.DELETE|windows.FILE_READ_ATTRIBUTES,
-			windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+			windows.FILE_SHARE_READ,
 			nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 		if statErr != nil {
 			return fmt.Errorf("%w; backup open: %v", err, statErr)

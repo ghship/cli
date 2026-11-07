@@ -82,7 +82,7 @@ func runDeferredBackupCleanup(args []string) error {
 		return err
 	}
 	h, err := windows.CreateFile(name, windows.DELETE|windows.GENERIC_READ,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		windows.FILE_SHARE_READ,
 		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return err
