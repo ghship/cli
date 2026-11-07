@@ -145,6 +145,9 @@ func standaloneDirectUpdate(old manifest, dir string, args []string, out io.Writ
 	if old.Binary == nil {
 		return errors.New("standalone installation required")
 	}
+	if old.Version != version {
+		return errors.New("installed manifest version does not match running CLI; preserved")
+	}
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--bin-dir" {
 			if i+1 == len(args) {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -46,6 +47,15 @@ func TestUpdateArchiveValidation(t *testing.T) {
 	}
 	if _, err := updateArchiveFile(data.Bytes(), "package/bin/missing", 8); err == nil {
 		t.Fatal("missing file accepted")
+	}
+}
+
+func TestStandaloneUpdateRejectsManifestVersionMismatch(t *testing.T) {
+	old := manifest{Version: "0.0.0", Binary: &binaryRecord{Path: "unused"}}
+	var output bytes.Buffer
+	err := standaloneDirectUpdate(old, t.TempDir(), nil, &output)
+	if err == nil || !strings.Contains(err.Error(), "manifest version does not match") {
+		t.Fatalf("mismatched manifest accepted: %v", err)
 	}
 }
 
