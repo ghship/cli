@@ -67,6 +67,14 @@ jobs:
           node tools/release/unpack.cjs dist/candidate dist/extracted
       - name: Test the exact shared candidate
         run: go run ./tools/smoke ./dist/extracted/package "dist/candidate/${{ needs.package.outputs.filename }}" "${{ needs.package.outputs.sha256 }}"
+      - name: Install npm 12 for compatibility verification
+        if: matrix.platform == 'linux-amd64'
+        run: npm install -g npm@12.2.0 --ignore-scripts
+      - name: Test exact candidate with npm 12
+        if: matrix.platform == 'linux-amd64'
+        env:
+          GHSHIP_SMOKE_CURRENT_ONLY: '1'
+        run: go run ./tools/smoke ./dist/extracted/package "dist/candidate/${{ needs.package.outputs.filename }}" "${{ needs.package.outputs.sha256 }}"
   package:
     name: npm package
     runs-on: ubuntu-24.04

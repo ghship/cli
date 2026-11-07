@@ -52,11 +52,11 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		if e != nil {
 			return nil, e
 		}
-		var records []struct{ Filename string }
-		if e = json.Unmarshal(packed, &records); e != nil || len(records) != 1 {
+		record, e := parseNpmPack(packed, name)
+		if e != nil {
 			return nil, fmt.Errorf("invalid platform tarball")
 		}
-		data, e := os.ReadFile(filepath.Join(tmp, records[0].Filename))
+		data, e := os.ReadFile(filepath.Join(tmp, record.Filename))
 		if e != nil {
 			return nil, e
 		}

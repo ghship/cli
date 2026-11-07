@@ -2,6 +2,7 @@
 // or printed here; npm obtains short-lived credentials from its trusted publisher.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),os=require('node:os');
 const {spawnSync}=require('node:child_process');
+const {singlePack}=require('../../npm/run.cjs');
 const dir=path.resolve(process.argv[2]||'');
 if(process.argv.length!==3)throw Error('usage: node publish.cjs <verified-bundle-directory>');
 const manifest=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json')));
@@ -20,9 +21,18 @@ function npm(args) {
  if(r.error)throw r.error;
  return r;
 }
+function viewString(output,field){
+ let value=JSON.parse(output);
+ if(Array.isArray(value)){
+  if(value.length!==1)throw Error(`Ambiguous npm ${field} result`);
+  value=value[0];
+ }
+ if(typeof value!=='string'||value.length===0)throw Error(`Invalid npm ${field} result`);
+ return value;
+}
 function versionIntegrity(p){
  const r=npm(['view',`${p.name}@${manifest.version}`,'dist.integrity','--json','--prefer-online']);
- if(r.status===0){const actual=JSON.parse(r.stdout);if(actual!==p.integrity)throw Error(`published content differs: ${p.name}`);return true;}
+ if(r.status===0){const actual=viewString(r.stdout,'integrity');if(actual!==p.integrity)throw Error(`published content differs: ${p.name}`);return true;}
  let error;try{error=JSON.parse(r.stdout).error;}catch(_){}
  if(error?.code==='E404')return false;
  throw Error(`Cannot verify ${p.name}: ${r.stderr.trim()}`);
@@ -30,7 +40,7 @@ function versionIntegrity(p){
 function latest(){
  const r=npm(['view','@ghship/cli','dist-tags.latest','--json','--prefer-online']);
  if(r.status!==0)throw Error(`Cannot check latest: ${r.stderr.trim()}`);
- return JSON.parse(r.stdout);
+ return viewString(r.stdout,'latest');
 }
 function compare(a,b){
  const x=a.split('.').map(Number),y=b.split('.').map(Number);
@@ -48,8 +58,8 @@ function verifyDownload(p){
    if(error?.code==='E404')return false;
    throw Error(`Cannot download ${p.name}@${manifest.version}: ${r.stderr.trim()}`);
   }
-  const records=JSON.parse(r.stdout);
-  if(!Array.isArray(records)||records.length!==1||records[0].filename!==p.filename)throw Error(`Unexpected download metadata: ${p.name}`);
+  const record=singlePack(JSON.parse(r.stdout),p.name);
+  if(record.version!==manifest.version||record.filename!==p.filename)throw Error(`Unexpected download metadata: ${p.name}`);
   const data=fs.readFileSync(path.join(temp,p.filename));
   if(crypto.createHash('sha256').update(data).digest('hex')!==p.sha256||'sha512-'+crypto.createHash('sha512').update(data).digest('base64')!==p.integrity)throw Error(`Downloaded content differs: ${p.name}`);
   return true;

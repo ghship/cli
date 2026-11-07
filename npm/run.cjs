@@ -4,6 +4,13 @@ const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
+function singlePack(value,name) {
+ let record;
+ if(Array.isArray(value)) {if(value.length!==1)throw new Error('Unexpected npm pack result');record=value[0];}
+ else if(value&&typeof value==='object'&&Object.keys(value).length===1&&Object.hasOwn(value,name))record=value[name];
+ if(!record||typeof record!=='object'||record.name!==name||typeof record.version!=='string')throw new Error('Unexpected npm pack result');
+ return record;
+}
 function platformInfo(platform = process.platform, arch = process.arch) {
  if (!['darwin','linux','win32'].includes(platform) || !['x64','arm64'].includes(arch)) throw new Error(`Unsupported platform: ${platform}/${arch}`);
  return {target:`${platform}-${arch}`,name:`@ghship/cli-${platform}-${arch}`,binary:platform==='win32'?'ghship.exe':'ghship'};
@@ -88,7 +95,7 @@ function lifecycle(executable,args) {
  const action=args[0], meta=require('./package.json'); let source=`${meta.name}@${meta.version}`;
  const passed=args.slice(1); const sourceIndex=passed.indexOf('--package-source');
  if(sourceIndex>=0) {if(!passed[sourceIndex+1])throw new Error('--package-source requires a local tarball');source=path.resolve(passed[sourceIndex+1]);passed.splice(sourceIndex,2);
-  const packed=JSON.parse(npm(['pack',source,'--dry-run','--json'],true));if(packed.length!==1||packed[0].name!==meta.name||packed[0].version!==meta.version)throw new Error('Local package source must match this exact package and version');
+  const packed=singlePack(JSON.parse(npm(['pack',source,'--dry-run','--json'],true)),meta.name);if(packed.version!==meta.version)throw new Error('Local package source must match this exact package and version');
  }
  const lifecycleArgs=[];const initArgs=[];let userOnly=false;
  const initValues=new Set(['--project','--repo','--author','--reviewer','--admin','--acceptance-pr']);
@@ -138,7 +145,7 @@ function lifecycle(executable,args) {
  let result;try{result=JSON.parse(init.stdout);}catch(_){result={ready:false,missing:['Initialization failed before producing a result'],next:['ghship init --json']};}
  result.userInstalled=true;result.version=meta.version;console.log(JSON.stringify(result));return init.code;
 }
-module.exports = {binaryPath,platformInfo};
+module.exports = {binaryPath,platformInfo,singlePack};
 if(require.main===module) {
  try {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');

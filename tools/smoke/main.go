@@ -84,20 +84,20 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	var packs []struct {
-		Filename string
-		Files    []struct{ Path string }
-	}
-	if e = json.Unmarshal(b, &packs); e != nil || len(packs) != 1 {
+	pack, e := parseNpmPack(b, "@ghship/cli")
+	if e != nil {
 		return fmt.Errorf("invalid npm pack output: %s", b)
 	}
-	for _, file := range packs[0].Files {
+	for _, file := range pack.Files {
 		if file.Path != "package.json" && file.Path != "run.cjs" && file.Path != "README.md" && file.Path != "checksums.json" && !strings.HasPrefix(file.Path, "bin/") {
 			return fmt.Errorf("unexpected distribution file: %s", file.Path)
 		}
 	}
 	if tarball == "" {
-		tarball = filepath.Join(tmp, packs[0].Filename)
+		tarball = filepath.Join(tmp, pack.Filename)
+	}
+	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
+		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)
 	}
 	omitDir := filepath.Join(tmp, "omit-optional")
 	if _, e = npm("install", "--prefix", omitDir, "--omit=optional", "--ignore-scripts", tarball); e != nil {
@@ -117,11 +117,11 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	var fixturePacks []struct{ Filename string }
-	if e = json.Unmarshal(fixturePacksJSON, &fixturePacks); e != nil || len(fixturePacks) != 1 {
+	fixturePack, e := parseNpmPack(fixturePacksJSON, "@ghship/cli")
+	if e != nil {
 		return fmt.Errorf("invalid synthetic baseline pack")
 	}
-	fixtureTar := filepath.Join(fixtureDir, fixturePacks[0].Filename)
+	fixtureTar := filepath.Join(fixtureDir, fixturePack.Filename)
 	fixtureVersion, e := command(fixtureBinary, "version")
 	if e != nil || strings.TrimSpace(string(fixtureVersion)) != "0.0.1" {
 		return fmt.Errorf("synthetic baseline CLI version mismatch")
@@ -305,11 +305,11 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	var foreignPacks []struct{ Filename string }
-	if e = json.Unmarshal(foreignPack, &foreignPacks); e != nil || len(foreignPacks) != 1 {
+	foreignRecord, e := parseNpmPack(foreignPack, "@ghship/cli")
+	if e != nil {
 		return fmt.Errorf("foreign fixture pack failed")
 	}
-	if _, e = npm("install", "-g", filepath.Join(foreign, foreignPacks[0].Filename), "--ignore-scripts", "--no-audit", "--no-fund"); e != nil {
+	if _, e = npm("install", "-g", filepath.Join(foreign, foreignRecord.Filename), "--ignore-scripts", "--no-audit", "--no-fund"); e != nil {
 		return e
 	}
 	if e = refused(func() ([]byte, error) {
