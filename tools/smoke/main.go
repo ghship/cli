@@ -729,6 +729,17 @@ func run() error {
 		return e
 	}
 	restoreWrong()
+	if runtime.GOOS == "windows" {
+		if err := withLockedBinary(installedBinary, func() error {
+			return refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "close programs using the executable and retry")
+		}); err != nil {
+			return fmt.Errorf("locked standalone update preservation: %w", err)
+		}
+		if e = checkStandaloneVersion("0.0.1"); e != nil {
+			return e
+		}
+		fmt.Println("PASS locked standalone update preserves installation and explains retry")
+	}
 	if b, e = runCommand(standaloneEnv, installedBinary, "update", "--json"); e != nil {
 		return fmt.Errorf("direct standalone upgrade: %w: %s", e, b)
 	}
