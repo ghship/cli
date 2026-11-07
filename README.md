@@ -100,7 +100,7 @@ Milestone 的 Issue 完成比例不等于产品验收。最终对照开发文档
 
 ## 更新与卸载
 
-通过 npm 安装后可使用 `ghship update`；也可使用下方 npm 入口更新或卸载。
+通过 npm 安装后可使用 `ghship update`；也可使用下方 npm 入口更新或卸载。如果 `ghship update` 提示需要外部入口，请运行下方的 npm 更新命令，该方式需要 Node.js 和 npm。使用自定义 skill 目录时，更新命令须继续传入相同的 `--dir`。
 
 ```sh
 npx @ghship/cli@latest update
