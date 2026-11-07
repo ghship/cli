@@ -318,7 +318,7 @@ func project(args []string, in io.Reader, out io.Writer) error {
 		return usage("--binding-only is only valid for project uninstall")
 	}
 	if args[0] == "uninstall" && *only {
-		return initialize([]string{"--project", *path, "--remove-binding", "--json"}, nil, out)
+		return removeProjectBinding(*path, *j, out)
 	}
 	root, e := projectRoot(*path)
 	if e != nil {
@@ -348,7 +348,7 @@ func project(args []string, in io.Reader, out io.Writer) error {
 	case "uninstall":
 		if me != nil {
 			if os.IsNotExist(me) {
-				return initialize([]string{"--project", root, "--remove-binding", "--json"}, nil, out)
+				return removeProjectBinding(root, *j, out)
 			}
 			return me
 		}
@@ -375,6 +375,14 @@ func project(args []string, in io.Reader, out io.Writer) error {
 		return usage("unknown project command")
 	}
 	return emitResult(out, *j, map[string]any{"action": args[0], "project": root, "localChangesPendingReview": true, "customizationPreserved": true, "platformRulesChanged": false})
+}
+
+func removeProjectBinding(root string, jsonMode bool, out io.Writer) error {
+	args := []string{"--project", root, "--remove-binding"}
+	if jsonMode {
+		args = append(args, "--json")
+	}
+	return initialize(args, nil, out)
 }
 
 type projectSkillRecord struct {

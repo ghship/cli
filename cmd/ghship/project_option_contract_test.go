@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -95,5 +97,52 @@ func TestProjectInstallRejectsIgnoredBindingOptions(t *testing.T) {
 	after, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("binding changed: %v", err)
+	}
+}
+
+func TestProjectUninstallHonorsJSONSelection(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	path, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, bindingOnly := range []bool{false, true} {
+		for _, option := range []string{"", "--json=false", "--json"} {
+			for _, exists := range []bool{true, false} {
+				if exists {
+					if err = os.WriteFile(path, []byte("binding"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					_ = os.Remove(path)
+				}
+				args := []string{"uninstall", "--project", root}
+				if bindingOnly {
+					args = append(args, "--binding-only")
+				}
+				if option != "" {
+					args = append(args, option)
+				}
+				var out bytes.Buffer
+				if err = project(args, nil, &out); err != nil {
+					t.Fatalf("%v: %v", args, err)
+				}
+				var value map[string]any
+				if err = json.Unmarshal(out.Bytes(), &value); err != nil || value["removedBinding"] != root {
+					t.Fatalf("%v invalid result %q: %v", args, out.String(), err)
+				}
+				compact := !strings.Contains(out.String(), "\n  ")
+				if compact != (option == "--json") {
+					t.Fatalf("%v ignored output mode: %q", args, out.String())
+				}
+				if _, err = os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("%v binding remains: %v", args, err)
+				}
+			}
+		}
 	}
 }
