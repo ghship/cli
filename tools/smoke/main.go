@@ -112,7 +112,7 @@ func run() error {
 		return fmt.Errorf("omitted platform package: %w", e)
 	}
 	fmt.Println("PASS omitted optional platform dependency explains how to recover")
-	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp)
+	fixtureDir, fixtureBinary, e := buildFixture(pkg, tmp, registry.server.URL)
 	if e != nil {
 		return e
 	}
@@ -597,8 +597,62 @@ func run() error {
 	if e = checkProject(installedBinary); e != nil {
 		return e
 	}
-	if b, err := command(installedBinary, "update"); expectRefusal(b, err, 4, "npx @ghship/cli@latest update") != nil {
-		return fmt.Errorf("standalone update guidance missing: %s", b)
+	standaloneEnv := append(append([]string{}, env...), "PATH="+filepath.Join(tmp, "empty-path"))
+	// A registry can return a well-formed platform tarball with a valid SRI
+	// that nevertheless does not match the candidate main package's checksum.
+	// Preserve every installed file on that mismatch.
+	platformMetaPath := filepath.Join(olderPlatformDir, "package.json")
+	platformMetaBytes, e := os.ReadFile(platformMetaPath)
+	if e != nil {
+		return e
+	}
+	var wrongPlatformMeta map[string]any
+	if e = json.Unmarshal(platformMetaBytes, &wrongPlatformMeta); e != nil {
+		return e
+	}
+	wrongPlatformMeta["version"] = assets.Version
+	platformMetaBytes, e = json.Marshal(wrongPlatformMeta)
+	if e != nil {
+		return e
+	}
+	if e = os.WriteFile(platformMetaPath, platformMetaBytes, 0644); e != nil {
+		return e
+	}
+	wrongPack, e := npm("pack", olderPlatformDir, "--json", "--pack-destination", olderPlatformDir)
+	if e != nil {
+		return e
+	}
+	wrongRecord, e := parseNpmPack(wrongPack, wrongPlatformMeta["name"].(string))
+	if e != nil {
+		return e
+	}
+	restoreWrong, e := registry.swapPlatform(olderPlatformDir, filepath.Join(olderPlatformDir, wrongRecord.Filename))
+	if e != nil {
+		return e
+	}
+	defer restoreWrong()
+	if e = refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "update binary checksum mismatch"); e != nil {
+		return e
+	}
+	restoreWrong()
+	if b, e = runCommand(standaloneEnv, installedBinary, "update", "--json"); e != nil {
+		return fmt.Errorf("direct standalone upgrade: %w: %s", e, b)
+	}
+	if e = checkStandaloneVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	fmt.Println("PASS direct standalone upgrade without Node or npm")
+	if _, e = command(binary, "uninstall", "--standalone", "--json"); e != nil {
+		return e
+	}
+	if _, e = command(fixtureBinary, "install", "--standalone", "--user-only", "--json"); e != nil {
+		return e
 	}
 	npxStandaloneUpdate := func() ([]byte, error) {
 		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "update", "--package-source", tarball, "--json")

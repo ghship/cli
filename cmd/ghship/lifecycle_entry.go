@@ -43,7 +43,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			initArgs = append(initArgs, s)
 		}
 	}
-	if !standalone && !skillOnly && (action == "update" || action == "uninstall") {
+	if !standalone && !skillOnly && action == "uninstall" {
 		if _, e := io.WriteString(out, "Use npx @ghship/cli@latest "+action+" to manage npm CLI and skill together.\n"); e != nil {
 			return e
 		}
@@ -73,6 +73,14 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		if e = validateManaged(dir, m); e != nil {
 			return e
 		}
+		if !standalone && !skillOnly && action == "update" && !check && m.Binary != nil {
+			for _, arg := range initArgs {
+				if arg != "--json" {
+					return usage("unknown update option")
+				}
+			}
+			return standaloneDirectUpdate(m, dir, life, out)
+		}
 		if !standalone && m.Binary != nil && !check {
 			return errors.New("standalone installation exists; cannot overwrite with npm")
 		}
@@ -82,6 +90,12 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		} else if !os.IsNotExist(e) {
 			return e
 		}
+	}
+	if !standalone && !skillOnly && action == "update" {
+		if _, e = io.WriteString(out, "Use npx @ghship/cli@latest update to manage npm CLI and skill together.\n"); e != nil {
+			return e
+		}
+		return cliError{4, errors.New("external npm lifecycle entry required")}
 	}
 	if check {
 		return emitResult(out, true, map[string]any{"managed": managed, "standalone": managed && m.Binary != nil, "version": m.Version, "targetVersion": version})

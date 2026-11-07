@@ -136,6 +136,10 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			_, _ = w.Write(item.data)
 			return
 		}
+		requestedVersion := ""
+		if i := strings.LastIndex(name, "/"); i > 0 && strings.Contains(name[:i], "/") {
+			requestedVersion, name = name[i+1:], name[:i]
+		}
 		r.mu.Lock()
 		item, ok := packages[name]
 		r.mu.Unlock()
@@ -148,6 +152,10 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			meta[k] = v
 		}
 		version := meta["version"].(string)
+		if requestedVersion != "" && requestedVersion != "latest" && requestedVersion != version {
+			http.NotFound(w, req)
+			return
+		}
 		sum := sha512.Sum512(item.data)
 		target := strings.TrimPrefix(name, "@ghship/cli-")
 		if name == "@ghship/cli" {
@@ -155,6 +163,10 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		}
 		meta["dist"] = map[string]string{"tarball": r.server.URL + "/tarballs/" + target + ".tgz", "integrity": "sha512-" + base64.StdEncoding.EncodeToString(sum[:])}
 		w.Header().Set("Content-Type", "application/json")
+		if requestedVersion != "" {
+			_ = json.NewEncoder(w).Encode(meta)
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": name, "dist-tags": map[string]string{"latest": version}, "versions": map[string]any{version: meta}})
 	}))
 	return r, nil
