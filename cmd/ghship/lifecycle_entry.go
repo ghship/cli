@@ -64,10 +64,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		return err
 	}
 	if !standalone && !skillOnly && action == "uninstall" {
-		if _, e := io.WriteString(out, "Use npx @ghship/cli@latest "+action+" to manage npm CLI and skill together.\n"); e != nil {
-			return e
-		}
-		return cliError{4, errors.New("external npm lifecycle entry required")}
+		return externalLifecycleEntry(action, life, out)
 	}
 	home, e := os.UserHomeDir()
 	if e != nil {
@@ -112,10 +109,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		}
 	}
 	if !standalone && !skillOnly && action == "update" {
-		if _, e = io.WriteString(out, "Use npx @ghship/cli@latest update to manage npm CLI and skill together.\n"); e != nil {
-			return e
-		}
-		return cliError{4, errors.New("external npm lifecycle entry required")}
+		return externalLifecycleEntry(action, life, out)
 	}
 	if check {
 		return emitResult(out, true, map[string]any{"managed": managed, "standalone": managed && m.Binary != nil, "version": m.Version, "targetVersion": version})
@@ -245,4 +239,22 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 		}
 	}
 	return nil
+}
+
+// An external entry is a pending state, with machine-readable guidance when requested.
+func externalLifecycleEntry(action string, args []string, out io.Writer) error {
+	next := "npx @ghship/cli@latest " + action
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--dir" || args[i] == "--bin-dir" {
+			i++
+			continue
+		}
+		if args[i] == "--json" {
+			if err := emitResult(out, true, map[string]any{"ready": false, "next": []string{next}}); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	return cliError{4, errors.New("external npm lifecycle entry required; use " + next)}
 }

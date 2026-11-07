@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { spawn, spawnSync } = require('node:child_process');
+class UsageError extends Error {}
 function singlePack(value,name) {
  let record;
  if(Array.isArray(value)) {if(value.length!==1)throw new Error('Unexpected npm pack result');record=value[0];}
@@ -105,8 +106,8 @@ function lifecycle(executable,args) {
  const action=args[0], meta=require('./package.json'); let source=`${meta.name}@${meta.version}`;
  const passed=args.slice(1); let sourceIndex=-1;
  for(let i=0;i<passed.length;i++){if(passed[i]==='--package-source'){sourceIndex=i;break;}if(['--dir','--project','--repo','--author','--reviewer','--admin','--acceptance-pr'].includes(passed[i]))i++;}
- if(sourceIndex>=0) {if(!passed[sourceIndex+1])throw new Error('--package-source requires a local tarball');source=path.resolve(passed[sourceIndex+1]);passed.splice(sourceIndex,2);
-  if(action==='uninstall')throw new Error('--package-source is not valid for uninstall');
+ if(sourceIndex>=0) {if(!passed[sourceIndex+1])throw new UsageError('--package-source requires a local tarball');source=path.resolve(passed[sourceIndex+1]);passed.splice(sourceIndex,2);
+  if(action==='uninstall')throw new UsageError('--package-source is not valid for uninstall');
  }
  const lifecycleArgs=[];const initArgs=[];let userOnly=false, hasInitOption=false;
  const initValues=new Set(['--project','--repo','--author','--reviewer','--admin','--acceptance-pr']);
@@ -114,13 +115,13 @@ function lifecycle(executable,args) {
  for(let i=0;i<passed.length;i++){
   const arg=passed[i];
   if(arg==='--user-only'){userOnly=true;continue;}
-  if(arg==='--dir'){if(!passed[i+1])throw new Error('--dir requires a path');lifecycleArgs.push(arg,passed[++i]);}
+  if(arg==='--dir'){if(!passed[i+1])throw new UsageError('--dir requires a path');lifecycleArgs.push(arg,passed[++i]);}
   else if(arg==='--json'||initSwitches.has(arg)){if(arg!=='--json')hasInitOption=true;initArgs.push(arg);}
-  else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<=0n||BigInt(value)>=(1n<<63n)))throw new Error('--acceptance-pr requires a positive integer');initArgs.push(arg,value);}
-  else throw new Error(`Unknown lifecycle option: ${arg}; use ghship help install`);
+  else if(initValues.has(arg)){if(!passed[i+1])throw new UsageError(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<=0n||BigInt(value)>=(1n<<63n)))throw new UsageError('--acceptance-pr requires a positive integer');initArgs.push(arg,value);}
+  else throw new UsageError(`Unknown lifecycle option: ${arg}; use ghship help install`);
  }
- if(userOnly&&action!=='install')throw new Error('--user-only is only valid for install');
- if((action!=='install'||userOnly)&&hasInitOption)throw new Error('Init options require install without --user-only');
+ if(userOnly&&action!=='install')throw new UsageError('--user-only is only valid for install');
+ if((action!=='install'||userOnly)&&hasInitOption)throw new UsageError('Init options require install without --user-only');
  const preflight=go(executable,[action,...(action==='install'&&!userOnly?[]:['--skill-only']),'--check',...lifecycleArgs,...(action==='install'&&!userOnly?initArgs:[]),'--json'],true);if(preflight.code!==0)return preflight.code;
  if(sourceIndex>=0){const packed=singlePack(JSON.parse(npm(['pack',source,'--dry-run','--json'],true)),meta.name);if(packed.version!==meta.version)throw new Error('Local package source must match this exact package and version');}
  const state=JSON.parse(preflight.stdout);
@@ -159,7 +160,7 @@ function lifecycle(executable,args) {
  let result;try{result=JSON.parse(init.stdout);}catch(_){result={ready:false,missing:['Initialization failed before producing a result'],next:['ghship init --json']};}
  result.userInstalled=true;result.version=meta.version;console.log(JSON.stringify(result));return init.code;
 }
-module.exports = {binaryPath,platformInfo,singlePack,lifecycleFlags,lifecycle};
+module.exports = {binaryPath,platformInfo,singlePack,lifecycleFlags,lifecycle,UsageError};
 if(require.main===module) {
  try {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');
@@ -178,5 +179,5 @@ if(require.main===module) {
   } else {
    const child=spawn(executable,args,{stdio:'inherit'});child.on('error',()=>{console.error('Cannot start Go CLI');process.exitCode=1});child.on('exit',(code,signal)=>{if(signal)process.kill(process.pid,signal);else process.exitCode=code===null?1:code});
   }
- }catch(error){console.error(error.message);process.exitCode=1;}
+ }catch(error){console.error(error.message);process.exitCode=error instanceof UsageError?2:1;}
 }

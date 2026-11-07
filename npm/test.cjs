@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { platformInfo, singlePack, lifecycleFlags, lifecycle } = require('./run.cjs');
+const { platformInfo, singlePack, lifecycleFlags, lifecycle, UsageError } = require('./run.cjs');
 test('six target selection paths', () => {
   for (const os of ['darwin', 'linux', 'win32']) for (const cpu of ['x64','arm64'])
     assert.match(platformInfo(os, cpu).binary, os === 'win32' ? /ghship\.exe$/ : /ghship$/);
@@ -78,5 +78,5 @@ test('npm lifecycle rejects invalid or inapplicable arguments before invoking a 
     ['uninstall','--user-only'],
     ['update','--user-only'],
     ['uninstall','--package-source','archive.tgz'],
-  ]) assert.throws(() => lifecycle('must-not-run', args), /option|integer|valid|Init|requires/i, args.join(' '));
+  ]) assert.throws(() => lifecycle('must-not-run', args), error => error instanceof UsageError && /option|integer|valid|Init|requires/i.test(error.message), args.join(' '));
 });
