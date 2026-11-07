@@ -12,6 +12,15 @@ npm 渠道需要 [Node.js/npm](https://nodejs.org/en/download)。项目接入需
 npx @ghship/cli@latest install
 ```
 
+Linux 上使用尚未初始化的自定义 npm 全局 prefix 时，如果 `npx` 报 `<prefix>/lib` 不存在（`ENOENT`），可用显式包入口安装用户工具或更新：
+
+```sh
+npm exec --yes --package=@ghship/cli@latest -- ghship install --user-only
+npm exec --yes --package=@ghship/cli@latest -- ghship update
+```
+
+使用自定义 skill 目录时，更新命令须传入相同的 `--dir`；安装用户工具后可按下文执行 `ghship init`。
+
 安装分两个环节：先安装一份 `~/.agents/skills/ghship` 与配套 CLI，再自动进入当前项目初始化。非项目目录或缺少必需配置时保留用户安装，明确报告项目未就绪。先只安装用户工具：
 
 ```sh
