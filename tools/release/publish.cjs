@@ -55,7 +55,9 @@ function verifyDownload(p){
   const r=npm(['pack',`${p.name}@${manifest.version}`,'--json','--ignore-scripts','--prefer-online','--cache',path.join(temp,'cache'),'--pack-destination',temp]);
   if(r.status!==0){
    let error;try{error=JSON.parse(r.stdout).error;}catch(_){}
-   if(error?.code==='E404')return false;
+   // npm can expose version metadata before its tarball is available. Pack
+   // reports either E404 or ETARGET during this processing window.
+   if(error?.code==='E404'||error?.code==='ETARGET')return false;
    throw Error(`Cannot download ${p.name}@${manifest.version}: ${r.stderr.trim()}`);
   }
   const record=singlePack(JSON.parse(r.stdout),p.name);
