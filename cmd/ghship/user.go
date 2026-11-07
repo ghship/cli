@@ -10,7 +10,9 @@ import (
 	"time"
 )
 
-const userHelp = `ghship user add|update|delete|list [--host github.com] [--user LOGIN] [--json]
+const userHelp = `ghship user add|update|delete|list [--host HOST] [--user LOGIN] [--json]
+add/update/delete use github.com when --host is omitted. list without --host
+checks all saved hosts; --host and --user filter the list when supplied.
 add/update: --token TOKEN | --token-file PATH | --token-stdin (choose one).
 Without a source, interactive input is hidden. --token-file and --token-stdin read JSON containing
 exactly one string field: {"token":"TOKEN"}. Unknown/duplicate fields, trailing
