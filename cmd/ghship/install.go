@@ -17,8 +17,8 @@ import (
 	assets "github.com/ghship/cli"
 )
 
-const installHelp = `ghship install|update|uninstall [--dir PATH] [--standalone] [--bin-dir PATH]
-  [--user-only] [--json]
+const installHelp = `ghship install|update|uninstall [--dir PATH] [--standalone] [--bin-dir PATH] [--json]
+  install additionally accepts [--user-only] and init options.
 Npm: npx @ghship/cli@VERSION install|update|uninstall coordinates the exact-version
 CLI package and home skill. install enters init unless --user-only.
 install accepts the init options shown by ghship help init and forwards them.
@@ -39,7 +39,7 @@ The npm-installed ghship update uses npm to run the latest published version.
 Npm uninstall uses an external npx entry.
 Install is idempotent for managed installations; unknown destinations preserved.
 Coordinator flags --skill-only and --check are for bundled-skill operations:
---check validates ownership without writing; neither implies project readiness.
+--check validates ownership and install arguments without writing; neither implies project readiness.
 Examples:
  npx @ghship/cli@latest install --user-only
  npx @ghship/cli@latest update

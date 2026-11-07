@@ -91,24 +91,38 @@ function saveReceipt(root,observed) {
  try{fs.writeFileSync(descriptor,JSON.stringify(observed));fs.fsyncSync(descriptor);}finally{fs.closeSync(descriptor);}
  try{fs.renameSync(stage,file);}finally{if(fs.existsSync(stage))fs.unlinkSync(stage);}
 }
+function lifecycleFlags(args) {
+ const values=new Set(['--dir','--bin-dir','--package-source','--project','--repo','--author','--reviewer','--admin','--acceptance-pr']);
+ const flags=new Set();
+ for(let i=1;i<args.length;i++) {
+  const arg=args[i];if(arg==='--')break;
+  if(arg==='--help'||arg==='-h'||arg==='--standalone'||arg==='--skill-only')flags.add(arg);
+  if(values.has(arg)&&i+1<args.length)i++;
+ }
+ return flags;
+}
 function lifecycle(executable,args) {
  const action=args[0], meta=require('./package.json'); let source=`${meta.name}@${meta.version}`;
- const passed=args.slice(1); const sourceIndex=passed.indexOf('--package-source');
+ const passed=args.slice(1); let sourceIndex=-1;
+ for(let i=0;i<passed.length;i++){if(passed[i]==='--package-source'){sourceIndex=i;break;}if(['--dir','--project','--repo','--author','--reviewer','--admin','--acceptance-pr'].includes(passed[i]))i++;}
  if(sourceIndex>=0) {if(!passed[sourceIndex+1])throw new Error('--package-source requires a local tarball');source=path.resolve(passed[sourceIndex+1]);passed.splice(sourceIndex,2);
-  const packed=singlePack(JSON.parse(npm(['pack',source,'--dry-run','--json'],true)),meta.name);if(packed.version!==meta.version)throw new Error('Local package source must match this exact package and version');
+  if(action==='uninstall')throw new Error('--package-source is not valid for uninstall');
  }
- const lifecycleArgs=[];const initArgs=[];let userOnly=false;
+ const lifecycleArgs=[];const initArgs=[];let userOnly=false, hasInitOption=false;
  const initValues=new Set(['--project','--repo','--author','--reviewer','--admin','--acceptance-pr']);
- const initSwitches=new Set(['--configure','--non-interactive','--confirm-auto-close']);
+ const initSwitches=new Set(['--configure','--non-interactive','--confirm-auto-close','--remove-binding']);
  for(let i=0;i<passed.length;i++){
   const arg=passed[i];
   if(arg==='--user-only'){userOnly=true;continue;}
   if(arg==='--dir'){if(!passed[i+1])throw new Error('--dir requires a path');lifecycleArgs.push(arg,passed[++i]);}
-  else if(arg==='--json'||initSwitches.has(arg)){initArgs.push(arg);}
-  else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);initArgs.push(arg,passed[++i]);}
+  else if(arg==='--json'||initSwitches.has(arg)){if(arg!=='--json')hasInitOption=true;initArgs.push(arg);}
+  else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<=0n||BigInt(value)>=(1n<<63n)))throw new Error('--acceptance-pr requires a positive integer');initArgs.push(arg,value);}
   else throw new Error(`Unknown lifecycle option: ${arg}; use ghship help install`);
  }
- const preflight=go(executable,[action,'--skill-only','--check',...lifecycleArgs,'--json'],true);if(preflight.code!==0)return preflight.code;
+ if(userOnly&&action!=='install')throw new Error('--user-only is only valid for install');
+ if((action!=='install'||userOnly)&&hasInitOption)throw new Error('Init options require install without --user-only');
+ const preflight=go(executable,[action,...(action==='install'&&!userOnly?[]:['--skill-only']),'--check',...lifecycleArgs,...(action==='install'&&!userOnly?initArgs:[]),'--json'],true);if(preflight.code!==0)return preflight.code;
+ if(sourceIndex>=0){const packed=singlePack(JSON.parse(npm(['pack',source,'--dry-run','--json'],true)),meta.name);if(packed.version!==meta.version)throw new Error('Local package source must match this exact package and version');}
  const state=JSON.parse(preflight.stdout);
  const installed=JSON.parse(npm(['list','-g',meta.name,'--depth=0','--json'],true));
  const existing=installed.dependencies && installed.dependencies[meta.name];
@@ -145,12 +159,13 @@ function lifecycle(executable,args) {
  let result;try{result=JSON.parse(init.stdout);}catch(_){result={ready:false,missing:['Initialization failed before producing a result'],next:['ghship init --json']};}
  result.userInstalled=true;result.version=meta.version;console.log(JSON.stringify(result));return init.code;
 }
-module.exports = {binaryPath,platformInfo,singlePack};
+module.exports = {binaryPath,platformInfo,singlePack,lifecycleFlags,lifecycle};
 if(require.main===module) {
  try {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');
   const args=process.argv.slice(2);const action=args[0];
-  if(['install','update','uninstall'].includes(action)&&!args.includes('--standalone')&&!args.includes('--skill-only')&&!args.includes('--help')){
+  const flags=lifecycleFlags(args);
+  if(['install','update','uninstall'].includes(action)&&!flags.has('--standalone')&&!flags.has('--skill-only')&&!flags.has('--help')&&!flags.has('-h')){
    if(action==='update'&&process.env.npm_command!=='exec') {
     const [command,base]=npmCommand();
     const result=spawnSync(command,[...base,'exec','--yes','--package','@ghship/cli@latest','--','ghship',...args],{stdio:'inherit'});

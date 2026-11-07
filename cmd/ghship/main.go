@@ -25,7 +25,8 @@ const help = `ghship — native GitHub delivery pipeline helpers
 Usage:
   ghship help [COMMAND]
   ghship version
-  ghship install|update|uninstall [--standalone] [--dir PATH] [--user-only] [--json]
+  ghship install|update|uninstall [--standalone] [--dir PATH] [--json]
+  ghship install [--user-only] [OPTIONS]
   ghship user add|update|delete|list [OPTIONS]
   ghship init [OPTIONS]
   ghship project install|status|update|uninstall|skill [OPTIONS]
@@ -138,13 +139,54 @@ func main() {
 		os.Exit(1)
 	}
 }
-func run(a []string, in io.Reader, out io.Writer) error {
-	if len(a) == 3 && (a[2] == "--help" || a[2] == "-h") {
-		if (a[0] == "user" && (a[1] == "add" || a[1] == "update" || a[1] == "delete" || a[1] == "list")) || (a[0] == "project" && (a[1] == "install" || a[1] == "status" || a[1] == "update" || a[1] == "uninstall" || a[1] == "skill")) {
-			return run([]string{"help", a[0]}, in, out)
+
+// commandHelpRequested recognizes help only in GHShip's own arguments, never
+// in a value or the native Git/gh argument stream after the separator.
+func commandHelpRequested(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	commands := map[string]bool{"help": true, "version": true, "install": true, "update": true, "uninstall": true, "user": true, "init": true, "project": true, "doctor": true, "git": true, "gh": true, "next": true, "tidy": true}
+	if !commands[args[0]] {
+		return false
+	}
+	if args[0] == "user" || args[0] == "project" {
+		if len(args) < 3 {
+			return args[1] == "--help" || args[1] == "-h"
+		}
+		valid := map[string]bool{}
+		if args[0] == "user" {
+			valid = map[string]bool{"add": true, "update": true, "delete": true, "list": true}
+		} else {
+			valid = map[string]bool{"install": true, "status": true, "update": true, "uninstall": true, "skill": true}
+		}
+		if !valid[args[1]] {
+			return args[1] == "--help" || args[1] == "-h"
 		}
 	}
-	if len(a) == 2 && (a[1] == "--help" || a[1] == "-h") {
+	values := map[string]bool{"dir": true, "bin-dir": true, "project": true, "repo": true, "author": true, "reviewer": true, "admin": true, "acceptance-pr": true, "scope": true, "host": true, "user": true, "token": true, "token-file": true, "mode": true, "overrides": true, "milestone": true, "package-source": true}
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+		key := strings.TrimLeft(arg, "-")
+		if strings.HasPrefix(arg, "-") && !strings.Contains(key, "=") && values[key] && i+1 < len(args) {
+			i++
+		}
+	}
+	return false
+}
+
+func run(a []string, in io.Reader, out io.Writer) error {
+	if commandHelpRequested(a) {
+		if a[0] == "help" || a[0] == "--help" || a[0] == "-h" {
+			fmt.Fprint(out, help)
+			return nil
+		}
 		return run([]string{"help", a[0]}, in, out)
 	}
 	if len(a) == 0 {

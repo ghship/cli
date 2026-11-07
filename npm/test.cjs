@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { platformInfo, singlePack } = require('./run.cjs');
+const { platformInfo, singlePack, lifecycleFlags, lifecycle } = require('./run.cjs');
 test('six target selection paths', () => {
   for (const os of ['darwin', 'linux', 'win32']) for (const cpu of ['x64','arm64'])
     assert.match(platformInfo(os, cpu).binary, os === 'win32' ? /ghship\.exe$/ : /ghship$/);
@@ -55,4 +55,28 @@ test('distribution notices reject missing license terms', () => {
     const corrupted = readme.slice(0, start) + segment.replace(term, '') + readme.slice(end);
     assert.throws(() => assertLicenseNotices(corrupted, projectLicense), undefined, label);
   }
+});
+
+
+test('lifecycle help is recognized as an option, never as a value', () => {
+  assert.ok(lifecycleFlags(['install','--dir','safe','-h']).has('-h'));
+  assert.ok(lifecycleFlags(['uninstall','--dir','safe','--help']).has('--help'));
+  assert.equal(lifecycleFlags(['install','--dir','--help']).has('--help'), false);
+  assert.equal(lifecycleFlags(['install','--project','--standalone']).has('--standalone'), false);
+});
+
+test('npm lifecycle rejects invalid or inapplicable arguments before invoking a binary', () => {
+  for (const args of [
+    ['install','--user-only','--project','test'],
+    ['install','--acceptance-pr','bad'],
+    ['install','--acceptance-pr','-1'],
+    ['install','--acceptance-pr','0'],
+    ...['--project','--repo','--author','--reviewer','--admin','--acceptance-pr'].map(option=>['install',option,'']),
+    ['install','--unknown-option'],
+    ['update','--project','test'],
+    ['uninstall','--unknown-option'],
+    ['uninstall','--user-only'],
+    ['update','--user-only'],
+    ['uninstall','--package-source','archive.tgz'],
+  ]) assert.throws(() => lifecycle('must-not-run', args), /option|integer|valid|Init|requires/i, args.join(' '));
 });

@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
 func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) error {
@@ -28,7 +32,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			standalone = true
 			life = append(life, s)
 		case "--dir", "--bin-dir":
-			if i+1 == len(args) {
+			if i+1 == len(args) || args[i+1] == "" {
 				return usage(s + " requires a path")
 			}
 			life = append(life, s, args[i+1])
@@ -40,8 +44,24 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			life = append(life, s)
 			initArgs = append(initArgs, s)
 		default:
+			name := strings.TrimPrefix(s, "--")
+			valueFlag := map[string]bool{"project": true, "repo": true, "author": true, "reviewer": true, "admin": true, "acceptance-pr": true}[name]
+			switchFlag := map[string]bool{"configure": true, "non-interactive": true, "confirm-auto-close": true, "remove-binding": true}[name]
+			if s != "--"+name || (!valueFlag && !switchFlag) {
+				return usage("invalid lifecycle arguments; use ghship help install")
+			}
+			if valueFlag && (i+1 == len(args) || args[i+1] == "") {
+				return usage(s + " requires a value")
+			}
 			initArgs = append(initArgs, s)
+			if valueFlag {
+				i++
+				initArgs = append(initArgs, args[i])
+			}
 		}
+	}
+	if err := validateLifecycleArguments(action, initArgs, skillOnly, userOnly, standalone, life); err != nil {
+		return err
 	}
 	if !standalone && !skillOnly && action == "uninstall" {
 		if _, e := io.WriteString(out, "Use npx @ghship/cli@latest "+action+" to manage npm CLI and skill together.\n"); e != nil {
@@ -142,4 +162,87 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		return nil
 	}
 	return initialize(initArgs, in, out)
+}
+
+var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+
+func validLifecycleLogin(value string) bool {
+	return validLogin.MatchString(value) && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
+}
+
+// Validate all arguments before reading or changing installation state.
+func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone bool, life []string) error {
+	if userOnly && action != "install" {
+		return usage("--user-only is only valid for install")
+	}
+	if skillOnly && standalone {
+		return usage("--skill-only cannot be combined with --standalone")
+	}
+	for i := 0; i < len(life); i++ {
+		if life[i] == "--bin-dir" && !standalone {
+			return usage("--bin-dir requires --standalone")
+		}
+		if life[i] == "--dir" || life[i] == "--bin-dir" {
+			i++
+		}
+	}
+	f := flag.NewFlagSet("init", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	for _, name := range []string{"project", "repo", "author", "reviewer", "admin"} {
+		f.String(name, "", "")
+	}
+	f.Int("acceptance-pr", 0, "")
+	for _, name := range []string{"configure", "non-interactive", "confirm-auto-close", "remove-binding", "json"} {
+		f.Bool(name, false, "")
+	}
+	if err := f.Parse(initArgs); err != nil || f.NArg() != 0 {
+		return usage("invalid lifecycle arguments; use ghship help install")
+	}
+	invalid := false
+	f.Visit(func(value *flag.Flag) {
+		if value.Name != "json" && (action != "install" || skillOnly || userOnly) {
+			invalid = true
+		}
+	})
+	if invalid {
+		return usage("init options require install without --user-only or --skill-only")
+	}
+	if f.Lookup("remove-binding").Value.String() == "true" {
+		f.Visit(func(value *flag.Flag) {
+			if value.Name != "remove-binding" && value.Name != "project" && value.Name != "json" {
+				invalid = true
+			}
+		})
+		if invalid {
+			return usage("--remove-binding accepts only --project and --json")
+		}
+	}
+	for _, name := range []string{"author", "reviewer", "admin"} {
+		value := f.Lookup(name).Value.String()
+		if value != "" && !validLifecycleLogin(value) {
+			return usage("invalid " + name + " username")
+		}
+	}
+	author, reviewer := f.Lookup("author").Value.String(), f.Lookup("reviewer").Value.String()
+	if author != "" && reviewer != "" && strings.EqualFold(author, reviewer) {
+		return usage("developer and acceptance usernames must differ")
+	}
+	var invalidPR bool
+	f.Visit(func(value *flag.Flag) {
+		if value.Name == "acceptance-pr" {
+			n, err := strconv.Atoi(value.Value.String())
+			invalidPR = err != nil || n <= 0
+		}
+	})
+	if invalidPR {
+		return usage("--acceptance-pr requires a positive PR number")
+	}
+	if repo := f.Lookup("repo").Value.String(); repo != "" {
+		_, err := parseOrigin("https://" + repo)
+		parts := strings.Split(repo, "/")
+		if err != nil || len(parts) != 3 || !validLifecycleLogin(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
+			return usage("invalid repository")
+		}
+	}
+	return nil
 }
