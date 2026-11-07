@@ -225,7 +225,7 @@ func commitReplacements(items []replacement) error {
 	}
 	for _, x := range items {
 		if x.backup != "" {
-			if e := os.RemoveAll(x.backup); e != nil {
+			if e := removeBackup(x.backup); e != nil {
 				return fmt.Errorf("operation completed; old data retained at %s: %w", x.backup, e)
 			}
 		}
