@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -647,14 +648,25 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
-	entries, e := os.ReadDir(standaloneDir)
-	if e != nil {
-		return e
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".ghship-backup-") {
-			return fmt.Errorf("direct standalone update left a backup: %s", entry.Name())
+	for attempt := 0; ; attempt++ {
+		entries, err := os.ReadDir(standaloneDir)
+		if err != nil {
+			return err
 		}
+		pending := ""
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".ghship-backup-") {
+				pending = entry.Name()
+				break
+			}
+		}
+		if pending == "" {
+			break
+		}
+		if attempt == 100 {
+			return fmt.Errorf("direct standalone update left a backup: %s", pending)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	fmt.Println("PASS direct standalone upgrade without Node or npm")
 	if _, e = command(binary, "uninstall", "--standalone", "--json"); e != nil {

@@ -287,7 +287,19 @@ func standaloneDirectUpdate(old manifest, dir string, args []string, out io.Writ
 		return errors.New("downloaded CLI version does not match package")
 	}
 	childArgs := append([]string{"update", "--standalone"}, args...)
+	asJSON := false
+	for _, arg := range args {
+		if arg == "--json" {
+			asJSON = true
+		}
+	}
+	if runtime.GOOS == "windows" && !asJSON {
+		childArgs = append(childArgs, "--json")
+	}
 	child := exec.CommandContext(operationContext, candidate, childArgs...)
+	if runtime.GOOS == "windows" {
+		child.Env = append(os.Environ(), "GHSHIP_DIRECT_UPDATE_PENDING_CLEANUP=1")
+	}
 	child.Stdin = os.Stdin
 	var childOutput bytes.Buffer
 	child.Stdout = &childOutput
@@ -310,6 +322,28 @@ func standaloneDirectUpdate(old manifest, dir string, args []string, out io.Writ
 	}
 	if err = validateManaged(dir, updated); err != nil {
 		return fmt.Errorf("update completed but verification failed: %w", err)
+	}
+	if runtime.GOOS == "windows" {
+		var result map[string]string
+		if json.Unmarshal(childOutput.Bytes(), &result) != nil {
+			return errors.New("update completed but cleanup status cannot be verified")
+		}
+		if backup := result["pendingBackup"]; backup != "" {
+			if err = startDeferredBackupCleanup(updated.Binary.Path, backup, old.Binary.Hash); err != nil {
+				return cliError{4, fmt.Errorf("update completed; previous executable retained at %s and automatic cleanup could not start: %w", backup, err)}
+			}
+			result["cleanup"] = "scheduled; previous executable may remain if cleanup fails"
+		}
+		if asJSON {
+			return json.NewEncoder(out).Encode(result)
+		}
+		if _, err = fmt.Fprintf(out, "update: %s (%s)\nCLI: %s\n", dir, main.Version, updated.Binary.Path); err != nil {
+			return err
+		}
+		if backup := result["pendingBackup"]; backup != "" {
+			_, err = fmt.Fprintf(out, "Previous executable cleanup scheduled: %s; it may remain if cleanup fails.\n", backup)
+		}
+		return err
 	}
 	_, err = io.Copy(out, &childOutput)
 	return err

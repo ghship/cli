@@ -177,7 +177,16 @@ type replacement struct {
 	expected            *bool
 }
 
-func commitReplacements(items []replacement) error {
+type pendingBackupError struct {
+	path  string
+	cause error
+}
+
+func (e pendingBackupError) Error() string {
+	return fmt.Sprintf("old binary retained at %s: %v", e.path, e.cause)
+}
+
+func commitReplacements(items []replacement, deferBinary ...string) error {
 	rollback := func(end int) error {
 		var errs []error
 		for i := end; i >= 0; i-- {
@@ -226,6 +235,9 @@ func commitReplacements(items []replacement) error {
 	for _, x := range items {
 		if x.backup != "" {
 			if e := removeBackup(x.backup); e != nil {
+				if runtime.GOOS == "windows" && len(deferBinary) == 1 && deferBinary[0] != "" && x.dest == deferBinary[0] && errors.Is(e, os.ErrPermission) {
+					return pendingBackupError{path: x.backup, cause: e}
+				}
 				return fmt.Errorf("operation completed; old data retained at %s: %w", x.backup, e)
 			}
 		}
@@ -441,7 +453,12 @@ func lifecycle(action string, a []string, out io.Writer) error {
 			return e
 		}
 	}
-	if e = commitReplacements(items); e != nil {
+	deferBinary := ""
+	if runtime.GOOS == "windows" && action == "update" && standalone && os.Getenv("GHSHIP_DIRECT_UPDATE_PENDING_CLEANUP") == "1" {
+		deferBinary = binaryPath
+	}
+	var pending pendingBackupError
+	if e = commitReplacements(items, deferBinary); e != nil && !errors.As(e, &pending) {
 		return e
 	}
 	result := map[string]string{"action": action, "directory": dir, "version": version}
@@ -449,12 +466,18 @@ func lifecycle(action string, a []string, out io.Writer) error {
 		result["binary"] = binaryPath
 		result["pathHint"] = filepath.Dir(binaryPath)
 	}
+	if pending.path != "" {
+		result["pendingBackup"] = pending.path
+	}
 	if asJSON {
 		return json.NewEncoder(out).Encode(result)
 	}
 	fmt.Fprintf(out, "%s: %s (%s)\n", action, dir, version)
 	if standalone {
 		fmt.Fprintf(out, "CLI: %s; add %s to PATH if needed\n", binaryPath, filepath.Dir(binaryPath))
+	}
+	if pending.path != "" {
+		fmt.Fprintf(out, "Previous executable retained for cleanup: %s\n", pending.path)
 	}
 	return nil
 }
