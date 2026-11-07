@@ -27,7 +27,8 @@ and enabling native branch deletion in this repository. It does not alter rulese
 successful actual CI; static workflow presence alone cannot prove readiness.
 Missing governance returns 4 with next steps. No rules bypass, fake CI or task database.
 Accounts: user add first, or enter them in interactive init. Tokens remain external.
---remove-binding can remove a missing directory's saved binding by its original path.
+--remove-binding accepts only --project and --json; it can remove a missing
+directory's saved binding by its original path.
 Exit: 0 ready/removed, 1 operation failed, 2 missing/invalid input, 4 setup pending.
 Example:
  ghship init --project /work/app --repo github.com/team/app --author dev \
@@ -236,6 +237,17 @@ func initialize(args []string, in io.Reader, out io.Writer) error {
 	remove := f.Bool("remove-binding", false, "remove only project binding")
 	if e := f.Parse(args); e != nil || f.NArg() != 0 {
 		return usage("invalid init arguments; use ghship help init")
+	}
+	if *remove {
+		inapplicable := false
+		f.Visit(func(value *flag.Flag) {
+			if value.Name != "remove-binding" && value.Name != "project" && value.Name != "json" {
+				inapplicable = true
+			}
+		})
+		if inapplicable {
+			return usage("--remove-binding accepts only --project and --json")
+		}
 	}
 	root, e := filepath.Abs(*path)
 	if e != nil {
