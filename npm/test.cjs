@@ -69,11 +69,12 @@ test('npm lifecycle rejects invalid or inapplicable arguments before invoking a 
   for (const args of [
     ['install','--user-only','--project','test'],
     ['install','--acceptance-pr','bad'],
+    ...['--project','--repo','--author','--reviewer','--admin','--acceptance-pr'].map(option=>['install',option,'']),
     ['install','--unknown-option'],
     ['update','--project','test'],
     ['uninstall','--unknown-option'],
     ['uninstall','--user-only'],
     ['update','--user-only'],
     ['uninstall','--package-source','archive.tgz'],
-  ]) assert.throws(() => lifecycle('must-not-run', args), /option|integer|valid|Init/i, args.join(' '));
+  ]) assert.throws(() => lifecycle('must-not-run', args), /option|integer|valid|Init|requires/i, args.join(' '));
 });

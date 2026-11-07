@@ -48,8 +48,11 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			if s != "--"+name || (!valueFlag && !switchFlag) {
 				return usage("invalid lifecycle arguments; use ghship help install")
 			}
+			if valueFlag && (i+1 == len(args) || args[i+1] == "") {
+				return usage(s + " requires a value")
+			}
 			initArgs = append(initArgs, s)
-			if valueFlag && i+1 < len(args) {
+			if valueFlag {
 				i++
 				initArgs = append(initArgs, args[i])
 			}

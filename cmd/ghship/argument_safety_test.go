@@ -50,6 +50,16 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 			t.Fatalf("%v changed absent installation", args)
 		}
 	}
+	for _, option := range []string{"--project", "--repo", "--author", "--reviewer", "--admin", "--acceptance-pr"} {
+		err := run([]string{"install", "--standalone", "--dir", dir, option, ""}, nil, &bytes.Buffer{})
+		var ce cliError
+		if !errors.As(err, &ce) || ce.code != 2 {
+			t.Fatalf("%s empty: %v", option, err)
+		}
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("%s empty changed installation", option)
+		}
+	}
 	if err := run(append(append([]string{"install"}, base...), "--user-only"), nil, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +84,17 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 		after, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
 		if err != nil || !bytes.Equal(before, after) {
 			t.Fatalf("%v damaged installation: %v", args, err)
+		}
+	}
+	for _, option := range []string{"--project", "--repo", "--author", "--reviewer", "--admin", "--acceptance-pr"} {
+		err := run([]string{"install", "--standalone", "--dir", dir, option, ""}, nil, &bytes.Buffer{})
+		var ce cliError
+		if !errors.As(err, &ce) || ce.code != 2 {
+			t.Fatalf("%s empty existing: %v", option, err)
+		}
+		after, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatalf("%s empty damaged installation: %v", option, err)
 		}
 	}
 	if err := run([]string{"uninstall", "--standalone", "--dir", dir}, nil, &bytes.Buffer{}); err != nil {
