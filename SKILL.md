@@ -2,7 +2,7 @@
 name: ghship
 description: "使用 GitHub 原生 Issue、PR、CI 和评审推进开发任务；适用于建单、开发、交付、独立评审和合并。"
 metadata:
-  version: "1.0.8"
+  version: "1.0.9"
 ---
 
 # GHShip
