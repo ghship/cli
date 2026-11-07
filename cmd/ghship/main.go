@@ -74,7 +74,8 @@ for controlled integration; verify login before invoking actual native gh comman
 The origin selects the host and must match any existing project binding. If no
 binding or origin exists, explicit overrides use github.com.
 Arguments, streams and gh exit codes preserved. Native arguments can select other
-resources; the caller checks the intended target. Credentials never printed.
+resources; the caller checks the intended target. GHShip does not itself print
+credentials. Native gh output is unfiltered and may contain sensitive data.
 Each role is used only by that role's authorized executor; account switching is not
 independent acceptance. Git authenticated operations: ghship git author -- push ...
 Examples:
