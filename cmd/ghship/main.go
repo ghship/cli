@@ -68,7 +68,7 @@ selects the expected identity; no default hardcoded accounts.
 Run inside the target Git repository, including with explicit role overrides.
 Stored author/reviewer credentials are outside Git, Unix protected files or
 Windows current-user DPAPI.
-Dispatcher uses local gh login. Ambient token variables are removed.
+Dispatcher uses local gh login. Ambient token and Git override variables are removed.
 Explicit GHSHIP_AUTHOR/REVIEWER/DISPATCHER and external PAT_FILE overrides are supported
 for controlled integration; verify login before invoking actual native gh command.
 The origin selects the host and must match any existing project binding. If no
@@ -283,8 +283,8 @@ func output(env []string, name string, a ...string) (string, error) {
 }
 
 // Resolve a physical working tree before any role identity or native command.
-func currentProjectRoot() (string, error) {
-	root, err := output(nil, "git", "rev-parse", "--show-toplevel")
+func currentProjectRoot(env []string) (string, error) {
+	root, err := output(env, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", err
 	}
@@ -309,10 +309,11 @@ func currentProjectRoot() (string, error) {
 
 // Absence is allowed only for an unbound override; unreadable configuration
 // must not be silently treated as a missing origin.
-func projectOrigin() (string, bool, error) {
+func projectOrigin(env []string) (string, bool, error) {
 	ctx, stop := context.WithTimeout(operationContext, 30*time.Second)
 	defer stop()
 	cmd := exec.CommandContext(ctx, "git", "config", "--get", "remote.origin.url")
+	cmd.Env = env
 	_, err := cmd.Output()
 	if err != nil {
 		var exit *exec.ExitError
@@ -321,11 +322,23 @@ func projectOrigin() (string, bool, error) {
 		}
 		return "", false, errors.New("cannot read project origin")
 	}
-	origin, err := output(nil, "git", "remote", "get-url", "origin")
+	origin, err := output(env, "git", "remote", "get-url", "origin")
 	if err != nil {
 		return "", false, errors.New("cannot resolve project origin")
 	}
 	return origin, true, nil
+}
+
+// Repository discovery and native role commands must use the same target.
+func cleanRoleEnv() []string {
+	var result []string
+	for _, value := range cleanGHEnv() {
+		key, _, _ := strings.Cut(value, "=")
+		if !strings.HasPrefix(strings.ToUpper(key), "GIT_") {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func roleEnvironment(role string) ([]string, error) {
@@ -342,11 +355,11 @@ func roleEnvironment(role string) ([]string, error) {
 	default:
 		return nil, usage("unknown role")
 	}
-	root, e := currentProjectRoot()
+	env := cleanRoleEnv()
+	root, e := currentProjectRoot(env)
 	if e != nil {
 		return nil, e
 	}
-	env := cleanGHEnv()
 	host := "github.com"
 	binding, bindErr := readBinding(root)
 	if bindErr != nil && !os.IsNotExist(bindErr) {
@@ -355,7 +368,7 @@ func roleEnvironment(role string) ([]string, error) {
 	if bindErr != nil && expected == "" {
 		return nil, errors.New("project role binding unavailable; run ghship init")
 	}
-	origin, hasOrigin, originErr := projectOrigin()
+	origin, hasOrigin, originErr := projectOrigin(env)
 	if originErr != nil {
 		return nil, originErr
 	}
@@ -423,7 +436,7 @@ func roleEnvironment(role string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if actor != expected {
+	if !strings.EqualFold(actor, expected) {
 		return nil, fmt.Errorf("wrong identity: expected %s, got %s", expected, actor)
 	}
 	return env, nil
