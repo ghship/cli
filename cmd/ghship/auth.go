@@ -19,14 +19,6 @@ import (
 	"unicode"
 )
 
-var validLogin = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$`)
-
-// Existing standard-form files remain discoverable; managed usernames add a
-// safe underscore-separated enterprise shortcode.
-func validStoredLogin(login string) bool {
-	return validLogin.MatchString(login) || validGitHubLogin(login)
-}
-
 var validHost = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*$`)
 var apiBaseOverride string // Tests only; never exposed as a command or environment setting.
 type account struct {
@@ -338,6 +330,9 @@ func accountMutation(args []string, in io.Reader, out io.Writer) error {
 	}
 	switch args[0] {
 	case "set", "add", "update", "remove":
+		if args[0] != "remove" && !validGitHubLogin(*user) {
+			return usage("invalid GitHub username")
+		}
 		p, e := accountPath(*host, *user)
 		if e != nil {
 			return e

@@ -241,3 +241,52 @@ func TestLifecycleCheckIsReadOnlyForEveryAction(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountMutationRejectsInvalidNewNamesButPreservesLegacy(t *testing.T) {
+	setupAuthHome(t)
+	calls := 0
+	testAPI(t, func(w http.ResponseWriter, r *http.Request) { calls++; fmt.Fprint(w, `{"login":"bad--user"}`) })
+	for _, login := range []string{"bad--user", "legacy-"} {
+		var out bytes.Buffer
+		err := users([]string{"add", "--user", login, "--token-stdin", "--non-interactive", "--json"}, tokenJSONReader("synthetic"), &out)
+		var ce cliError
+		if !errors.As(err, &ce) || ce.code != 2 || out.Len() != 0 {
+			t.Errorf("invalid new login accepted: %q", login)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("invalid account triggered identity request")
+	}
+	file, err := accountPath("github.com", "legacy-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	protected, err := protectSecret([]byte("synthetic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(account{SchemaVersion: 1, Host: "github.com", Login: "legacy-", Secret: protected})
+	if err = atomicConfig(file, raw); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err = users([]string{"update", "--user", "legacy-", "--token-stdin", "--non-interactive", "--json"}, tokenJSONReader("synthetic-new"), &out)
+	var ce cliError
+	if !errors.As(err, &ce) || ce.code != 2 {
+		t.Errorf("invalid legacy update accepted: %v", err)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil || !bytes.Equal(raw, after) {
+		t.Fatalf("legacy account changed: %v", err)
+	}
+	if calls != 0 {
+		t.Fatal("invalid update triggered identity request")
+	}
+	out.Reset()
+	if err = users([]string{"delete", "--user", "legacy-", "--json"}, nil, &out); err != nil {
+		t.Fatalf("legacy deletion rejected: %v", err)
+	}
+	if _, err = os.Stat(file); !os.IsNotExist(err) {
+		t.Fatalf("legacy account remains: %v", err)
+	}
+}
