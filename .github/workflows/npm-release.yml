@@ -1,9 +1,11 @@
 name: npm release
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       verification_run:
-        description: Successful main-branch verification run ID for this exact commit
+        description: Newest successful main-branch verification run ID for this release commit
         required: true
         type: string
       artifact:
@@ -20,7 +22,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'release' && !github.event.release.draft && !github.event.release.prerelease)
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -34,20 +38,32 @@ jobs:
           package-manager-cache: false
       - name: Install npm with trusted dist-tag support
         run: npm install -g npm@12.2.0 --ignore-scripts
-      - name: Verify main revision and successful verification run
+      - name: Select the current formal release and its verified candidate
+        id: selection
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_RUN: ${{ inputs.verification_run }}
           RELEASE_ARTIFACT: ${{ inputs.artifact }}
+          GHSHIP_GUARD_PATH: ${{ runner.temp }}/release-guard.json
         shell: bash
         run: |
-          [[ "$RELEASE_RUN" =~ ^[0-9]+$ ]]
-          [[ "$RELEASE_ARTIFACT" =~ ^ghship-candidate-[0-9]+$ ]]
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN" > "$RUNNER_TEMP/verification.json"
-          node -e "const r=require(process.argv[1]);if(r.path!=='.github/workflows/verification.yml'||r.status!=='completed'||r.conclusion!=='success'||r.event!=='push'||r.head_branch!=='main'||r.head_sha!==process.env.GITHUB_SHA)throw Error('verification run does not match the released main commit')" "$RUNNER_TEMP/verification.json"
-          gh run download "$RELEASE_RUN" --name "$RELEASE_ARTIFACT" --dir "$RUNNER_TEMP/candidate"
+          node tools/release/select_release.cjs
+      - name: Download the exact verified candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN: ${{ steps.selection.outputs.run }}
+          RELEASE_ARTIFACT: ${{ steps.selection.outputs.artifact }}
+        run: gh run download "$RELEASE_RUN" --name "$RELEASE_ARTIFACT" --dir "$RUNNER_TEMP/candidate"
       - name: Verify all seven packages
         run: node tools/release/unpack.cjs "$RUNNER_TEMP/candidate" "$RUNNER_TEMP/extracted"
+      - name: Verify downloadable GitHub release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GHSHIP_RELEASE_GUARD: ${{ runner.temp }}/release-guard.json
+        run: node tools/release/verify_release_assets.cjs "$RUNNER_TEMP/candidate"
       - name: Publish platform packages, then main latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GHSHIP_RELEASE_GUARD: ${{ runner.temp }}/release-guard.json
         run: node tools/release/publish.cjs "$RUNNER_TEMP/candidate"
