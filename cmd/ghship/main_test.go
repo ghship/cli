@@ -53,6 +53,18 @@ func helper(name string) {
 			return
 		}
 		if strings.Join(args, " ") == "remote get-url origin" {
+			if counter := os.Getenv("TEST_ORIGIN_COUNTER"); counter != "" {
+				b, _ := os.ReadFile(counter)
+				if len(b) >= 2 {
+					fmt.Println("https://github.com/other/repo.git")
+					return
+				}
+				_ = os.WriteFile(counter, append(b, 'x'), 0600)
+			}
+			if os.Getenv("GIT_DIR") != "" && os.Getenv("TEST_REDIRECTED_ORIGIN") != "" {
+				fmt.Println(os.Getenv("TEST_REDIRECTED_ORIGIN"))
+				return
+			}
 			fmt.Println(envDefault("TEST_ORIGIN", "https://github.com/fixture/repo.git"))
 			return
 		}

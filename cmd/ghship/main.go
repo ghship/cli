@@ -91,7 +91,8 @@ Input: complete Open Issue list within the authorized milestone/parent scope.
 Required native fields: number, assignees, blockedBy, subIssuesSummary.
 stdin mode rejects missing fields, incomplete blocker nodes and 1000+ lists
 (possible truncation); use milestone mode for automatic native pagination.
-Resumes one uniquely assigned leaf; multiple owned leaves fail. Otherwise chooses
+Login matching is case insensitive. Resumes one uniquely assigned leaf; multiple
+owned leaves fail. Otherwise chooses
 lowest-numbered unassigned leaf with no blockers. Parent Issues are not selected.
 Owned tasks still require the caller to check dependencies before development.
 Caller checks scope, pagination, acceptance criteria, workspace and active PRs;
@@ -501,7 +502,7 @@ func selectCompleteIssues(items []issue, author string) (int, string, error) {
 			continue
 		}
 		for _, p := range *x.Assignees {
-			if p.Login == author {
+			if strings.EqualFold(p.Login, author) {
 				if *x.BlockedBy.TotalCount != 0 {
 					return 0, "", errors.New("assigned slice blocked; preserve and park it before claiming dependency repair")
 				}
@@ -526,6 +527,7 @@ func selectCompleteIssues(items []issue, author string) (int, string, error) {
 }
 func next(a []string, in io.Reader, out io.Writer) error {
 	author := ""
+	authorSpecified := false
 	asJSON := false
 	milestone := 0
 	for i := 0; i < len(a); i++ {
@@ -536,6 +538,7 @@ func next(a []string, in io.Reader, out io.Writer) error {
 				return usage("--author requires LOGIN")
 			}
 			author = a[i]
+			authorSpecified = true
 		case "--json":
 			asJSON = true
 		case "--milestone":
@@ -551,6 +554,9 @@ func next(a []string, in io.Reader, out io.Writer) error {
 		default:
 			return usage("unknown next option")
 		}
+	}
+	if authorSpecified && !validQueueAuthor(author) {
+		return usage("--author must be a valid GitHub login")
 	}
 	if milestone != 0 {
 		items, login, err := milestoneIssues(milestone, author)

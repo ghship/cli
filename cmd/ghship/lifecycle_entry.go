@@ -160,7 +160,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 
 var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
 
-func validLifecycleLogin(value string) bool {
+func validGitHubLogin(value string) bool {
 	return validLogin.MatchString(value) && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
 }
 
@@ -213,7 +213,7 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 	}
 	for _, name := range []string{"author", "reviewer", "admin"} {
 		value := f.Lookup(name).Value.String()
-		if value != "" && !validLifecycleLogin(value) {
+		if value != "" && !validGitHubLogin(value) {
 			return usage("invalid " + name + " username")
 		}
 	}
@@ -234,7 +234,7 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 	if repo := f.Lookup("repo").Value.String(); repo != "" {
 		_, err := parseOrigin("https://" + repo)
 		parts := strings.Split(repo, "/")
-		if err != nil || len(parts) != 3 || !validLifecycleLogin(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
+		if err != nil || len(parts) != 3 || !validGitHubLogin(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
 			return usage("invalid repository")
 		}
 	}

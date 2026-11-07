@@ -7,6 +7,27 @@ import (
 	"strings"
 )
 
+// GitHub.com managed users append an enterprise shortcode after an underscore.
+// The special setup account similarly ends in _admin.
+func validQueueAuthor(login string) bool {
+	if validGitHubLogin(login) {
+		return true
+	}
+	if len(login) > 39 {
+		return false
+	}
+	name, suffix, ok := strings.Cut(login, "_")
+	if !ok || !validGitHubLogin(name) || len(suffix) < 3 || len(suffix) > 8 {
+		return false
+	}
+	for _, c := range suffix {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
 type connection[T any] struct {
 	Total *int `json:"totalCount"`
 	Nodes []T  `json:"nodes"`
@@ -124,9 +145,12 @@ func completeNested[T any](env []string, initial connection[T], args []string, p
 	return rows, nil
 }
 func milestoneIssues(number int, author string) ([]issue, string, error) {
-	origin, e := output(nil, "git", "remote", "get-url", "origin")
+	origin, hasOrigin, e := projectOrigin(cleanRoleEnv())
 	if e != nil {
 		return nil, "", e
+	}
+	if !hasOrigin {
+		return nil, "", errors.New("project origin unavailable")
 	}
 	repo, e := parseOrigin(origin)
 	if e != nil {
@@ -136,6 +160,17 @@ func milestoneIssues(number int, author string) ([]issue, string, error) {
 	env, e := roleEnvironment("author")
 	if e != nil {
 		return nil, "", e
+	}
+	verifiedOrigin, present, e := projectOrigin(cleanRoleEnv())
+	if e != nil {
+		return nil, "", e
+	}
+	if !present {
+		return nil, "", errors.New("project origin changed during selection")
+	}
+	verifiedRepo, e := parseOrigin(verifiedOrigin)
+	if e != nil || verifiedRepo != repo {
+		return nil, "", errors.New("project origin changed during selection")
 	}
 	for _, value := range env {
 		if strings.HasPrefix(value, "GH_HOST=") && strings.TrimPrefix(value, "GH_HOST=") != parts[0] {
