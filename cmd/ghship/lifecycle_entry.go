@@ -42,16 +42,20 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			life = append(life, s)
 			initArgs = append(initArgs, s)
 		default:
-			name := strings.TrimLeft(strings.SplitN(s, "=", 2)[0], "-")
+			name := strings.TrimPrefix(s, "--")
 			valueFlag := map[string]bool{"project": true, "repo": true, "author": true, "reviewer": true, "admin": true, "acceptance-pr": true}[name]
+			switchFlag := map[string]bool{"configure": true, "non-interactive": true, "confirm-auto-close": true, "remove-binding": true}[name]
+			if s != "--"+name || (!valueFlag && !switchFlag) {
+				return usage("invalid lifecycle arguments; use ghship help install")
+			}
 			initArgs = append(initArgs, s)
-			if valueFlag && !strings.Contains(s, "=") && i+1 < len(args) {
+			if valueFlag && i+1 < len(args) {
 				i++
 				initArgs = append(initArgs, args[i])
 			}
 		}
 	}
-	if err := validateLifecycleArguments(action, initArgs, skillOnly, userOnly, standalone, check, life); err != nil {
+	if err := validateLifecycleArguments(action, initArgs, skillOnly, userOnly, standalone, life); err != nil {
 		return err
 	}
 	if !standalone && !skillOnly && action == "uninstall" {
@@ -156,7 +160,10 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 }
 
 // Validate all arguments before reading or changing installation state.
-func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone, check bool, life []string) error {
+func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone bool, life []string) error {
+	if userOnly && action != "install" {
+		return usage("--user-only is only valid for install")
+	}
 	if skillOnly && standalone {
 		return usage("--skill-only cannot be combined with --standalone")
 	}
@@ -182,12 +189,37 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 	}
 	invalid := false
 	f.Visit(func(value *flag.Flag) {
-		if value.Name != "json" && (action != "install" || skillOnly || userOnly || check) {
+		if value.Name != "json" && (action != "install" || skillOnly || userOnly) {
 			invalid = true
 		}
 	})
 	if invalid {
-		return usage("init options require install without --user-only, --skill-only or --check")
+		return usage("init options require install without --user-only or --skill-only")
+	}
+	if f.Lookup("remove-binding").Value.String() == "true" {
+		f.Visit(func(value *flag.Flag) {
+			if value.Name != "remove-binding" && value.Name != "project" && value.Name != "json" {
+				invalid = true
+			}
+		})
+		if invalid {
+			return usage("--remove-binding accepts only --project and --json")
+		}
+	}
+	for _, name := range []string{"author", "reviewer", "admin"} {
+		value := f.Lookup(name).Value.String()
+		if value != "" && !validLogin.MatchString(value) {
+			return usage("invalid " + name + " username")
+		}
+	}
+	author, reviewer := f.Lookup("author").Value.String(), f.Lookup("reviewer").Value.String()
+	if author != "" && reviewer != "" && strings.EqualFold(author, reviewer) {
+		return usage("developer and acceptance usernames must differ")
+	}
+	if repo := f.Lookup("repo").Value.String(); repo != "" {
+		if _, err := parseOrigin("https://" + repo); err != nil {
+			return usage("invalid repository")
+		}
 	}
 	return nil
 }

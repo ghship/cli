@@ -119,9 +119,10 @@ function lifecycle(executable,args) {
   else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<-(1n<<63n)||BigInt(value)>=(1n<<63n)))throw new Error('--acceptance-pr requires an integer');initArgs.push(arg,value);}
   else throw new Error(`Unknown lifecycle option: ${arg}; use ghship help install`);
  }
+ if(userOnly&&action!=='install')throw new Error('--user-only is only valid for install');
  if((action!=='install'||userOnly)&&hasInitOption)throw new Error('Init options require install without --user-only');
+ const preflight=go(executable,[action,...(action==='install'&&!userOnly?[]:['--skill-only']),'--check',...lifecycleArgs,...(action==='install'&&!userOnly?initArgs:[]),'--json'],true);if(preflight.code!==0)return preflight.code;
  if(sourceIndex>=0){const packed=singlePack(JSON.parse(npm(['pack',source,'--dry-run','--json'],true)),meta.name);if(packed.version!==meta.version)throw new Error('Local package source must match this exact package and version');}
- const preflight=go(executable,[action,'--skill-only','--check',...lifecycleArgs,'--json'],true);if(preflight.code!==0)return preflight.code;
  const state=JSON.parse(preflight.stdout);
  const installed=JSON.parse(npm(['list','-g',meta.name,'--depth=0','--json'],true));
  const existing=installed.dependencies && installed.dependencies[meta.name];

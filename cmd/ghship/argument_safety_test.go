@@ -31,7 +31,13 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 		{"install", "--standalone", "--dir", dir, "--bin-dir", bin, "--acceptance-pr", "bad"},
 		{"install", "--standalone", "--user-only", "--dir", dir, "--project", dir},
 		{"update", "--standalone", "--dir", dir, "--project", dir},
-		{"install", "--check", "--dir", dir, "--project", dir},
+		{"install", "--check", "--dir", dir, "--author", "bad@user"},
+		{"install", "--standalone", "--dir", dir, "--author", "bad@user"},
+		{"install", "--standalone", "--dir", dir, "--author", "Alice", "--reviewer", "alice"},
+		{"install", "--standalone", "--dir", dir, "--remove-binding", "--author", "alice"},
+		{"install", "--standalone", "--dir", dir, "--json=true"},
+		{"install", "--standalone", "--dir", dir, "-json"},
+		{"uninstall", "--standalone", "--dir", dir, "--user-only"},
 		{"install", "--skill-only", "--standalone", "--dir", dir},
 		{"uninstall", "--standalone", "--dir", dir, "--unknown"},
 	} {
@@ -53,6 +59,7 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"uninstall", "--standalone", "--dir", dir, "--unknown"},
+		{"uninstall", "--standalone", "--dir", dir, "--user-only"},
 		{"update", "--standalone", "--dir", dir, "--project", dir},
 		{"uninstall", "--standalone", "--dir", dir, "--help"},
 	} {

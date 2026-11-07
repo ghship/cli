@@ -100,6 +100,17 @@ func run() error {
 	if e = registry.registerMain(pkg, tarball); e != nil {
 		return e
 	}
+	// Invalid initialization must be rejected by the packaged npm entry before
+	// it installs any files, even when a local package source was supplied.
+	invalidDir := filepath.Join(tmp, "invalid-arguments-skill")
+	invalidOutput, invalidErr := npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--package-source", tarball, "--dir", invalidDir, "--author", "bad@user", "--json")
+	if e = expectRefusal(invalidOutput, invalidErr, 2, "invalid author username"); e != nil {
+		return fmt.Errorf("invalid npm init argument: %w", e)
+	}
+	if _, e = os.Stat(invalidDir); !os.IsNotExist(e) {
+		return fmt.Errorf("invalid npm init argument changed installation")
+	}
+	fmt.Println("PASS invalid npm initialization rejected before installation")
 	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
 		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)
 	}
@@ -780,7 +791,10 @@ func run() error {
 	// A standalone user must be able to use the documented npx entry without
 	// replacing the installation channel or losing their managed files.
 	for _, action := range []string{"update", "install"} {
-		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--user-only", "--json"}
+		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--json"}
+		if action == "install" {
+			args = append(args, "--user-only")
+		}
 		if b, e = npm(args...); e != nil {
 			return fmt.Errorf("npx %s of standalone installation: %w: %s", action, e, b)
 		}
@@ -801,7 +815,7 @@ func run() error {
 	}
 	fmt.Println("PASS npx standalone update, reinstall, conflict and downgrade protections")
 	for i := 0; i < 2; i++ {
-		if _, e = command(binary, "update", "--standalone", "--user-only", "--json"); e != nil {
+		if _, e = command(binary, "update", "--standalone", "--json"); e != nil {
 			return e
 		}
 		if e = verifyInstalledSkill(home, assets.Version); e != nil {
@@ -818,7 +832,7 @@ func run() error {
 		return e
 	}
 	if e = testSkillConflicts(func() ([]byte, error) {
-		return command(binary, "update", "--standalone", "--user-only", "--json")
+		return command(binary, "update", "--standalone", "--json")
 	}); e != nil {
 		return fmt.Errorf("standalone conflict: %w", e)
 	}
@@ -838,7 +852,7 @@ func run() error {
 		if err = os.Chmod(parent, 0555); err != nil {
 			return err
 		}
-		err = refused(func() ([]byte, error) { return command(binary, "update", "--standalone", "--user-only", "--json") }, "permission denied")
+		err = refused(func() ([]byte, error) { return command(binary, "update", "--standalone", "--json") }, "permission denied")
 		restore := os.Chmod(parent, info.Mode().Perm())
 		if err != nil {
 			return fmt.Errorf("standalone permissions: %w", err)
@@ -851,7 +865,7 @@ func run() error {
 		parent := filepath.Dir(skillDir)
 		if e = withDeniedDirectoryCreate(parent, func() error {
 			return refused(func() ([]byte, error) {
-				return command(binary, "update", "--standalone", "--user-only", "--json")
+				return command(binary, "update", "--standalone", "--json")
 			}, "Access is denied")
 		}); e != nil {
 			return fmt.Errorf("standalone Windows ACL: %w", e)
@@ -859,7 +873,7 @@ func run() error {
 		fmt.Println("PASS Windows ACL denied directory creation and preserved installation")
 	}
 	if e = refused(func() ([]byte, error) {
-		return command(fixtureBinary, "update", "--standalone", "--user-only", "--json")
+		return command(fixtureBinary, "update", "--standalone", "--json")
 	}, "downgrade refused"); e != nil {
 		return fmt.Errorf("standalone downgrade: %w", e)
 	}
@@ -872,7 +886,7 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
-	if _, e = command(binary, "uninstall", "--standalone", "--user-only", "--json"); e != nil {
+	if _, e = command(binary, "uninstall", "--standalone", "--json"); e != nil {
 		return e
 	}
 	if e = checkUninstalled(installedBinary); e != nil {
@@ -880,7 +894,11 @@ func run() error {
 	}
 	fmt.Println("PASS standalone synthetic baseline upgrade and downgrade refusal")
 	for _, action := range []string{"install", "install", "update", "uninstall"} {
-		b, e = command(binary, action, "--standalone", "--user-only", "--json")
+		args := []string{action, "--standalone", "--json"}
+		if action == "install" {
+			args = append(args, "--user-only")
+		}
+		b, e = command(binary, args...)
 		if e != nil {
 			return e
 		}

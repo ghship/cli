@@ -25,7 +25,8 @@ const help = `ghship — native GitHub delivery pipeline helpers
 Usage:
   ghship help [COMMAND]
   ghship version
-  ghship install|update|uninstall [--standalone] [--dir PATH] [--user-only] [--json]
+  ghship install|update|uninstall [--standalone] [--dir PATH] [--json]
+  ghship install [--user-only] [OPTIONS]
   ghship user add|update|delete|list [OPTIONS]
   ghship init [OPTIONS]
   ghship project install|status|update|uninstall|skill [OPTIONS]

@@ -72,6 +72,8 @@ test('npm lifecycle rejects invalid or inapplicable arguments before invoking a 
     ['install','--unknown-option'],
     ['update','--project','test'],
     ['uninstall','--unknown-option'],
+    ['uninstall','--user-only'],
+    ['update','--user-only'],
     ['uninstall','--package-source','archive.tgz'],
   ]) assert.throws(() => lifecycle('must-not-run', args), /option|integer|valid|Init/i, args.join(' '));
 });
