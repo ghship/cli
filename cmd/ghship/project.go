@@ -163,10 +163,10 @@ func validStatusBinding(p projectBinding) bool {
 		return false
 	}
 	parts := strings.Split(p.Repo, "/")
-	if len(parts) != 3 || !validQueueAuthor(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
+	if len(parts) != 3 || !validGitHubLogin(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
 		return false
 	}
-	return validQueueAuthor(p.Author) && validQueueAuthor(p.Reviewer) && validQueueAuthor(p.Admin) && !strings.EqualFold(p.Author, p.Reviewer)
+	return validGitHubLogin(p.Author) && validGitHubLogin(p.Reviewer) && validGitHubLogin(p.Admin) && !strings.EqualFold(p.Author, p.Reviewer)
 }
 
 type projectFileConflict struct{ message string }

@@ -14,7 +14,7 @@
 - npm 安装的 `ghship update` 通过 npm 运行最新已发布版本；也可用 `npx @ghship/cli@VERSION update` 指定版本。卸载使用外部 `npx @ghship/cli@VERSION uninstall`，不在 Windows 删除运行中的自身。
 - 对已验证的直接下载安装，外部 npm 的 `install` 和 `update` 也可更新 CLI 与 skill，保留原安装渠道和路径；卸载仍使用独立下载的二进制及 `--standalone`。
 - 直接下载：已安装的 `ghship update` 从官方 npm registry 获取并校验当前平台二进制，无需 Node/npm；也可用外部下载二进制执行 `install|update|uninstall --standalone [--bin-dir PATH] [--dir PATH]`。
-- 安装默认进入初始化，可同时传入下述init参数；`--user-only`仅完成用户级安装。默认skill目录为`~/.agents/skills/ghship`，自定义目录需在后续更新/卸载时继续传入同一`--dir`。直接下载默认CLI目录为Unix `~/.local/bin`、Windows `%LOCALAPPDATA%/Programs/ghship`，可用`--bin-dir`指定，不自动修改PATH。协调器使用`--skill-only`仅维护内嵌skill，`--check`只检查所有权；两者不代表项目已就绪。
+- 安装默认进入初始化，可同时传入下述init参数；`--user-only`仅完成用户级安装。默认skill目录为`~/.agents/skills/ghship`，自定义目录需在后续更新/卸载时继续传入同一`--dir`。直接下载默认CLI目录为Unix `~/.local/bin`、Windows `%LOCALAPPDATA%/Programs/ghship`，可用`--bin-dir`指定，不自动修改PATH。协调器使用`--skill-only`仅维护内嵌skill，`--check`只读检查所有权及可预先验证的安装参数；两者不代表项目已就绪。
 - `user add|update|delete|list`：`--host`、`--user`、`--json`；add/update用`--token TOKEN`、`--token-file PATH`或`--token-stdin`（三选一），AI必须`--non-interactive`。delete有引用则拒绝。
 - `init`/`project install`：`--project`、`--repo HOST/OWNER/REPO`、`--author`、`--reviewer`、`--admin`、`--configure`、`--confirm-auto-close`、`--acceptance-pr NUMBER`、`--remove-binding`、`--non-interactive`、`--json`。confirm记录UI确认，acceptance-pr必须是实际已合且独立批准并通过CI的接入PR；remove-binding仅移除本地绑定。自动邀请/接受只限目标仓库；configure不授权任意ruleset修改。
 - `project status|update|uninstall`：`--project`、`--json`；uninstall可`--binding-only`清理旧路径绑定，不删除项目内容。
@@ -29,7 +29,7 @@ GitHub下载渠道自带skill，不需Node/Go。npm 使用与 Node.js 操作系�
 {"token":"github_pat_REPLACE_WITH_YOUR_TOKEN"}
 ```
 
-用户名和host由CLI指定；add、update和delete未指定host时使用github.com。list未指定host时列出所有已保存主机，`--host`和`--user`可分别过滤主机与登录名。AI从仓库外JSON文件调用：
+用户名支持GitHub普通用户和带企业短码的托管用户，host由CLI指定；add、update和delete未指定host时使用github.com。list未指定host时列出所有已保存主机，`--host`和`--user`可分别过滤主机与登录名。AI从仓库外JSON文件调用：
 
 ```sh
 ghship user add --user acceptor --token-file /secure/acceptor.json --non-interactive --json

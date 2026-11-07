@@ -117,6 +117,21 @@ func run() error {
 	if _, e = os.Stat(invalidDir); !os.IsNotExist(e) {
 		return fmt.Errorf("invalid npm option changed installation")
 	}
+	for _, action := range []string{"install", "update", "uninstall"} {
+		output, err := npm("exec", "--yes", "--package", tarball, "--", "ghship", action, "--check", "--dir", invalidDir, "--json")
+		if err != nil {
+			return fmt.Errorf("npm %s check failed: %w", action, err)
+		}
+		var state struct {
+			Managed bool `json:"managed"`
+		}
+		if json.Unmarshal(output, &state) != nil || state.Managed {
+			return fmt.Errorf("npm %s check returned invalid state", action)
+		}
+		if _, err = os.Stat(invalidDir); !os.IsNotExist(err) {
+			return fmt.Errorf("npm %s check changed installation", action)
+		}
+	}
 	fmt.Println("PASS invalid npm initialization rejected before installation")
 	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
 		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)

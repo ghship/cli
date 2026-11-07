@@ -19,6 +19,7 @@ const initHelp = `ghship init [--project PATH] [--repo HOST/OWNER/REPO]
   [--configure] [--non-interactive] [--json]
   [--confirm-auto-close] [--acceptance-pr NUMBER] [--remove-binding]
 Binds one physical project directory to verified GitHub identities outside Git.
+GitHub Enterprise Managed User logins with their enterprise shortcode are supported.
 Uses Git/gh. Admin is the expected local gh login, ambient token variables removed.
 --configure explicitly authorizes collaborator invitations/acceptance (write minimum)
 and enabling native branch deletion in this repository. It does not alter rulesets.
@@ -368,7 +369,7 @@ func initialize(args []string, in io.Reader, out io.Writer) error {
 	for _, v := range []struct{ name, value string }{{"author", *author}, {"reviewer", *reviewer}, {"admin", *adminUser}} {
 		if v.value == "" {
 			missing = append(missing, v.name)
-		} else if !validLogin.MatchString(v.value) {
+		} else if !validGitHubLogin(v.value) {
 			return usage("invalid " + v.name + " username")
 		}
 	}

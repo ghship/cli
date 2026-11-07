@@ -80,3 +80,8 @@ test('npm lifecycle rejects invalid or inapplicable arguments before invoking a 
     ['uninstall','--package-source','archive.tgz'],
   ]) assert.throws(() => lifecycle('must-not-run', args), error => error instanceof UsageError && /option|integer|valid|Init|requires/i.test(error.message), args.join(' '));
 });
+
+test('npm entry recognizes check without mistaking a path value for an option', () => {
+  assert.ok(lifecycleFlags(['install','--check']).has('--check'));
+  assert.equal(lifecycleFlags(['install','--dir','--check']).has('--check'), false);
+});

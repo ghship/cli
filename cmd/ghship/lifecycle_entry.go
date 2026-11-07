@@ -63,7 +63,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 	if err := validateLifecycleArguments(action, initArgs, skillOnly, userOnly, standalone, life); err != nil {
 		return err
 	}
-	if !standalone && !skillOnly && action == "uninstall" {
+	if !standalone && !skillOnly && !check && action == "uninstall" {
 		return externalLifecycleEntry(action, life, out)
 	}
 	home, e := os.UserHomeDir()
@@ -108,11 +108,11 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			return e
 		}
 	}
-	if !standalone && !skillOnly && action == "update" {
-		return externalLifecycleEntry(action, life, out)
-	}
 	if check {
 		return emitResult(out, true, map[string]any{"managed": managed, "standalone": managed && m.Binary != nil, "version": m.Version, "targetVersion": version})
+	}
+	if !standalone && !skillOnly && action == "update" {
+		return externalLifecycleEntry(action, life, out)
 	}
 	if action == "uninstall" && !managed {
 		return emitResult(out, true, map[string]any{"action": "uninstall", "alreadyAbsent": true})
@@ -159,10 +159,6 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 }
 
 var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
-
-func validGitHubLogin(value string) bool {
-	return validLogin.MatchString(value) && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
-}
 
 // Validate all arguments before reading or changing installation state.
 func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone bool, life []string) error {
