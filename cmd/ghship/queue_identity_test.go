@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,11 +60,14 @@ func TestNextRespectsCaseInsensitiveOwnership(t *testing.T) {
 func TestNextRejectsInvalidAuthorBeforeSelection(t *testing.T) {
 	input := "[" + queueFixture(1, "", 0, 0) + "]"
 	for _, login := range []string{"", " ", "bad@user", "bad-", "bad--user"} {
-		var out bytes.Buffer
-		err := next([]string{"--author", login, "--json"}, strings.NewReader(input), &out)
-		var ce cliError
-		if !errors.As(err, &ce) || ce.code != 2 || out.Len() != 0 {
-			t.Errorf("%q: output %q error %v", login, out.String(), err)
+		for _, mode := range [][]string{nil, {"--milestone", "1"}} {
+			var out bytes.Buffer
+			args := append(append([]string{}, mode...), "--author", login, "--json")
+			err := next(args, strings.NewReader(input), &out)
+			var ce cliError
+			if !errors.As(err, &ce) || ce.code != 2 || out.Len() != 0 {
+				t.Errorf("%q %v: output %q error %v", login, mode, out.String(), err)
+			}
 		}
 	}
 }
@@ -108,5 +114,55 @@ func TestNextAcceptsEnterpriseManagedUsernames(t *testing.T) {
 		if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Issue != 10 || got.Action != "resume" {
 			t.Fatalf("%s: %s %v", login, out.String(), err)
 		}
+	}
+}
+
+func TestMilestoneOriginUsesVerifiedProjectEnvironment(t *testing.T) {
+	base, _ := fixture(t)
+	setupAuthHome(t)
+	token := filepath.Join(base, "synthetic")
+	if err := os.WriteFile(token, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GHSHIP_AUTHOR", "author")
+	t.Setenv("GHSHIP_AUTHOR_PAT_FILE", token)
+	t.Setenv("TEST_ACTOR", "author")
+	t.Setenv("GIT_DIR", filepath.Join(base, "other-git"))
+	t.Setenv("GIT_WORK_TREE", filepath.Join(base, "other-worktree"))
+	t.Setenv("TEST_REDIRECTED_ORIGIN", "https://github.com/other/repo.git")
+	// The mock gh intentionally returns no page; inspect only its query scope.
+	_, _, _ = milestoneIssues(1, "author")
+	data, err := os.ReadFile(os.Getenv("CALL_DATA"))
+	if err != nil {
+		t.Fatalf("query did not reach fixture: %v", err)
+	}
+	var captured struct {
+		Args []string `json:"args"`
+	}
+	if err = json.Unmarshal(data, &captured); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(captured.Args, "owner=fixture") || slices.Contains(captured.Args, "owner=other") {
+		t.Fatalf("wrong query owner: %v", captured.Args)
+	}
+}
+
+func TestMilestoneFailsIfOriginChangesBeforeQuery(t *testing.T) {
+	base, _ := fixture(t)
+	setupAuthHome(t)
+	token := filepath.Join(base, "synthetic")
+	if err := os.WriteFile(token, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GHSHIP_AUTHOR", "author")
+	t.Setenv("GHSHIP_AUTHOR_PAT_FILE", token)
+	t.Setenv("TEST_ACTOR", "author")
+	t.Setenv("TEST_ORIGIN_COUNTER", filepath.Join(base, "origin-count"))
+	_, _, err := milestoneIssues(1, "author")
+	if err == nil || !strings.Contains(err.Error(), "origin changed") {
+		t.Fatalf("changed origin not rejected: %v", err)
+	}
+	if _, err = os.Stat(os.Getenv("CALL_DATA")); !os.IsNotExist(err) {
+		t.Fatalf("query executed after origin changed: %v", err)
 	}
 }

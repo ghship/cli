@@ -145,9 +145,12 @@ func completeNested[T any](env []string, initial connection[T], args []string, p
 	return rows, nil
 }
 func milestoneIssues(number int, author string) ([]issue, string, error) {
-	origin, e := output(nil, "git", "remote", "get-url", "origin")
+	origin, hasOrigin, e := projectOrigin(cleanRoleEnv())
 	if e != nil {
 		return nil, "", e
+	}
+	if !hasOrigin {
+		return nil, "", errors.New("project origin unavailable")
 	}
 	repo, e := parseOrigin(origin)
 	if e != nil {
@@ -157,6 +160,17 @@ func milestoneIssues(number int, author string) ([]issue, string, error) {
 	env, e := roleEnvironment("author")
 	if e != nil {
 		return nil, "", e
+	}
+	verifiedOrigin, present, e := projectOrigin(cleanRoleEnv())
+	if e != nil {
+		return nil, "", e
+	}
+	if !present {
+		return nil, "", errors.New("project origin changed during selection")
+	}
+	verifiedRepo, e := parseOrigin(verifiedOrigin)
+	if e != nil || verifiedRepo != repo {
+		return nil, "", errors.New("project origin changed during selection")
 	}
 	for _, value := range env {
 		if strings.HasPrefix(value, "GH_HOST=") && strings.TrimPrefix(value, "GH_HOST=") != parts[0] {
