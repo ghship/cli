@@ -112,7 +112,7 @@ func accountReferences(host, user string) ([]string, error) {
 	return result, nil
 }
 func gitAt(root string, args ...string) (string, error) {
-	return output(nil, "git", append([]string{"-C", root}, args...)...)
+	return output(cleanGitEnv(), "git", append([]string{"-C", root}, args...)...)
 }
 func parseOrigin(raw string) (string, error) {
 	s := strings.TrimSuffix(strings.TrimSpace(raw), ".git")
@@ -239,6 +239,9 @@ func initialize(args []string, in io.Reader, out io.Writer) error {
 	if e := f.Parse(args); e != nil || f.NArg() != 0 {
 		return usage("invalid init arguments; use ghship help init")
 	}
+	if *path == "" {
+		return usage("--project requires a path")
+	}
 	if *remove {
 		inapplicable := false
 		f.Visit(func(value *flag.Flag) {
@@ -287,14 +290,11 @@ func initialize(args []string, in io.Reader, out io.Writer) error {
 	if err := doctor([]string{"--scope", "project"}, io.Discard); err != nil {
 		return pending([]string{"Git/gh prerequisite or native feature unavailable"}, []string{"ghship doctor --scope project --json; install or upgrade missing tools, then rerun init"}, 4)
 	}
-	top, e := gitAt(root, "rev-parse", "--show-toplevel")
+	top, e := projectRoot(root)
 	if e != nil {
 		return pending([]string{"Git project"}, []string{"ghship init --project /path/to/project"}, 4)
 	}
-	root, e = filepath.EvalSymlinks(top)
-	if e != nil {
-		return e
-	}
+	root = top
 	origin, e := gitAt(root, "remote", "get-url", "origin")
 	if e != nil {
 		return pending([]string{"origin remote"}, []string{"Set the intended GitHub origin, then rerun init"}, 4)

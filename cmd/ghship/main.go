@@ -333,9 +333,9 @@ func projectOrigin(env []string) (string, bool, error) {
 }
 
 // Repository discovery and native role commands must use the same target.
-func cleanRoleEnv() []string {
+func withoutGitOverrides(values []string) []string {
 	var result []string
-	for _, value := range cleanGHEnv() {
+	for _, value := range values {
 		key, _, _ := strings.Cut(value, "=")
 		if !strings.HasPrefix(strings.ToUpper(key), "GIT_") {
 			result = append(result, value)
@@ -343,6 +343,9 @@ func cleanRoleEnv() []string {
 	}
 	return result
 }
+
+func cleanGitEnv() []string  { return withoutGitOverrides(os.Environ()) }
+func cleanRoleEnv() []string { return withoutGitOverrides(cleanGHEnv()) }
 
 func roleEnvironment(role string) ([]string, error) {
 	var expected, file string
@@ -611,7 +614,8 @@ func tidy(a []string, out io.Writer) error {
 	if asJSON && a[1] != "--json" {
 		return usage("unknown tidy option")
 	}
-	git := func(a ...string) (string, error) { return output(nil, "git", a...) }
+	env := cleanGitEnv()
+	git := func(a ...string) (string, error) { return output(env, "git", a...) }
 	dirty, err := git("status", "--porcelain")
 	if err != nil {
 		return err
@@ -619,7 +623,7 @@ func tidy(a []string, out io.Writer) error {
 	if dirty != "" {
 		return errors.New("dirty workspace; preserve local work")
 	}
-	data, err := output(nil, "gh", "pr", "view", a[0], "--json", "state,baseRefName,headRefName,headRefOid,mergeCommit,isCrossRepository")
+	data, err := output(env, "gh", "pr", "view", a[0], "--json", "state,baseRefName,headRefName,headRefOid,mergeCommit,isCrossRepository")
 	if err != nil {
 		return err
 	}
@@ -634,7 +638,7 @@ func tidy(a []string, out io.Writer) error {
 	if pr.State != "MERGED" || pr.IsCrossRepository {
 		return errors.New("requires merged same-repository PR")
 	}
-	data, err = output(nil, "gh", "repo", "view", "--json", "url,defaultBranchRef")
+	data, err = output(env, "gh", "repo", "view", "--json", "url,defaultBranchRef")
 	if err != nil {
 		return err
 	}
@@ -672,7 +676,7 @@ func tidy(a []string, out io.Writer) error {
 		return errors.New("remote default branch lacks merge commit")
 	}
 	ref := "refs/heads/" + branch
-	present, err := localHead(ref)
+	present, err := localHead(ref, env)
 	if err != nil {
 		return err
 	}
@@ -698,7 +702,7 @@ func tidy(a []string, out io.Writer) error {
 		return errors.New("default branch advanced; retry")
 	}
 	// Recheck immediately before deletion: preserve unexpected local updates.
-	present, err = localHead(ref)
+	present, err = localHead(ref, env)
 	if err != nil {
 		return err
 	}
@@ -716,8 +720,9 @@ func tidy(a []string, out io.Writer) error {
 	fmt.Fprintln(out, "Local default branch synchronized; merged local branch cleaned")
 	return nil
 }
-func localHead(ref string) (string, error) {
-	c := exec.Command("git", "show-ref", "--verify", "--quiet", ref)
+func localHead(ref string, env []string) (string, error) {
+	c := exec.CommandContext(operationContext, "git", "show-ref", "--verify", "--quiet", ref)
+	c.Env = env
 	if e := c.Run(); e != nil {
 		var ee *exec.ExitError
 		if errors.As(e, &ee) && ee.ExitCode() == 1 {
@@ -725,5 +730,5 @@ func localHead(ref string) (string, error) {
 		}
 		return "", e
 	}
-	return output(nil, "git", "rev-parse", ref)
+	return output(env, "git", "rev-parse", ref)
 }
