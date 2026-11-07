@@ -607,6 +607,12 @@ func run() error {
 			return fmt.Errorf("standalone %s failure preservation: %w", failure, err)
 		}
 	}
+	restoreTruncated := registry.setPlatformFailure("truncate")
+	truncatedErr := refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "unexpected EOF")
+	restoreTruncated()
+	if truncatedErr != nil {
+		return fmt.Errorf("standalone interrupted platform download preservation: %w", truncatedErr)
+	}
 	invalidTemp := filepath.Join(tmp, "not-a-directory")
 	if e = os.WriteFile(invalidTemp, []byte("not a directory"), 0600); e != nil {
 		return e
@@ -615,7 +621,40 @@ func run() error {
 	if e = refused(func() ([]byte, error) { return runCommand(writeFailureEnv, installedBinary, "update", "--json") }, "not-a-directory"); e != nil {
 		return fmt.Errorf("standalone temporary write failure preservation: %w", e)
 	}
-	fmt.Println("PASS direct standalone network, redirect and temporary write failures preserve installation")
+	parent := filepath.Dir(skillDir)
+	targetPermissionChecked := false
+	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
+		info, err := os.Stat(parent)
+		if err != nil {
+			return err
+		}
+		if err = os.Chmod(parent, 0555); err != nil {
+			return err
+		}
+		err = refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "permission denied")
+		restoreErr := os.Chmod(parent, info.Mode().Perm())
+		if err != nil {
+			return fmt.Errorf("direct standalone target permission: %w", err)
+		}
+		if restoreErr != nil {
+			return restoreErr
+		}
+		targetPermissionChecked = true
+	}
+	if runtime.GOOS == "windows" {
+		if err := withDeniedDirectoryCreate(parent, func() error {
+			return refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "Access is denied")
+		}); err != nil {
+			return fmt.Errorf("direct standalone target ACL: %w", err)
+		}
+		targetPermissionChecked = true
+	}
+	fmt.Println("PASS direct standalone interrupted download preserves installation")
+	if targetPermissionChecked {
+		fmt.Println("PASS direct standalone target permission denial preserves installation")
+	} else {
+		fmt.Println("SKIP direct standalone target permission denial when running as root")
+	}
 	// A registry can return a well-formed platform tarball with a valid SRI
 	// that nevertheless does not match the candidate main package's checksum.
 	// Preserve every installed file on that mismatch.

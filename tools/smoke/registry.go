@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -16,12 +17,13 @@ import (
 // registry serves only the exact local platform tarballs. It records every
 // tarball request so the test can distinguish metadata from binary downloads.
 type registry struct {
-	server         *httptest.Server
-	mu             sync.Mutex
-	downloads      map[string]int
-	registerMain   func(string, string) error
-	swapPlatform   func(string, string) (func(), error)
-	setMainFailure func(string) func()
+	server             *httptest.Server
+	mu                 sync.Mutex
+	downloads          map[string]int
+	registerMain       func(string, string) error
+	swapPlatform       func(string, string) (func(), error)
+	setMainFailure     func(string) func()
+	setPlatformFailure func(string) func()
 }
 
 func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*registry, error) {
@@ -67,6 +69,14 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 	}
 	r := &registry{downloads: map[string]int{}}
 	mainFailure := ""
+	platformFailure := ""
+	r.setPlatformFailure = func(value string) func() {
+		r.mu.Lock()
+		previous := platformFailure
+		platformFailure = value
+		r.mu.Unlock()
+		return func() { r.mu.Lock(); platformFailure = previous; r.mu.Unlock() }
+	}
 	r.setMainFailure = func(value string) func() {
 		r.mu.Lock()
 		previous := mainFailure
@@ -133,6 +143,7 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			}
 			r.mu.Lock()
 			item, ok := packages[name]
+			failure := platformFailure
 			if ok && name != "@ghship/cli" {
 				r.downloads[name]++
 			}
@@ -142,6 +153,20 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 				return
 			}
 			w.Header().Set("Content-Type", "application/octet-stream")
+			if name != "@ghship/cli" && failure == "truncate" {
+				w.Header().Set("Content-Length", strconv.Itoa(len(item.data)))
+				_, _ = w.Write(item.data[:min(1024, len(item.data))])
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+				if h, ok := w.(http.Hijacker); ok {
+					c, _, err := h.Hijack()
+					if err == nil {
+						_ = c.Close()
+					}
+				}
+				return
+			}
 			_, _ = w.Write(item.data)
 			return
 		}
