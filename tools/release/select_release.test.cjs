@@ -1,0 +1,29 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process');
+const script=path.join(__dirname,'select_release.cjs'),sha='a'.repeat(40),tagObject='b'.repeat(40);
+function fixture(t,changes={}){
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'ghship-select-test-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const bin=path.join(root,'bin');fs.mkdirSync(bin);const event={action:'published',release:{id:42,tag_name:'v1.0.8',draft:false,prerelease:false},...changes.event};
+ const passed=name=>({name,status:'completed',conclusion:'success'});
+ const jobs=['npm package',...['linux-amd64','linux-arm64','darwin-amd64','darwin-arm64','windows-amd64','windows-arm64'].map(p=>`native (${p})`)].map(name=>({name,run_id:101,run_attempt:1,status:'completed',conclusion:'success',steps:name==='npm package'?[passed('Pack candidate once'),passed('Run actions/upload-artifact@abc')]:['Download shared candidate','Verify and extract the exact shared candidate','Test the exact shared candidate'].map(passed)}));
+ const state={jobs,latest:{id:42,tag_name:'v1.0.8',draft:false,prerelease:false},tag:{object:{type:'tag',sha:tagObject}},annotated:{object:{type:'commit',sha}},comparison:{status:'ahead',base_commit:{sha}},runs:[{id:101,head_sha:sha,head_branch:'main',event:'push',path:'.github/workflows/verification.yml',status:'completed',conclusion:'success',run_attempt:1}],artifacts:[{name:'ghship-candidate-1',expired:false}],...changes.state};
+ const statePath=path.join(root,'state.json'),eventPath=path.join(root,'event.json'),output=path.join(root,'output'),guard=path.join(root,'guard.json');fs.writeFileSync(statePath,JSON.stringify(state));fs.writeFileSync(eventPath,JSON.stringify(event));
+ const mock=`#!/usr/bin/env node\nconst s=JSON.parse(require('fs').readFileSync(process.env.TASK_STATE));const q=process.argv.at(-1);let v;if(q.endsWith('/releases/latest'))v=s.latest;else if(q.includes('/git/ref/tags/'))v=s.tag;else if(q.includes('/git/tags/'))v=s.annotated;else if(q.includes('/compare/'))v=s.comparison;else if(q.includes('/workflows/verification.yml/runs?'))v=[{total_count:s.runs.length,workflow_runs:s.runs}];else if(q.includes('/attempts/')&&q.includes('/jobs?'))v=[{total_count:s.jobs.length,jobs:s.jobs}];else if(q.includes('/actions/runs/')&&q.includes('/artifacts?'))v=[{total_count:s.artifacts.length,artifacts:s.artifacts}];else process.exit(2);process.stdout.write(JSON.stringify(v));`;
+ fs.writeFileSync(path.join(bin,'gh'),mock,{mode:0o755});const env={...process.env,PATH:bin+path.delimiter+process.env.PATH,TASK_STATE:statePath,GITHUB_REPOSITORY:'ghship/cli',GITHUB_SHA:sha,GITHUB_REF:'refs/tags/v1.0.8',GITHUB_EVENT_NAME:'release',GITHUB_EVENT_PATH:eventPath,GHSHIP_GUARD_PATH:guard,GITHUB_OUTPUT:output,...changes.env};
+ return {run:()=>spawnSync(process.execPath,[script],{env,encoding:'utf8'}),guard,output};
+}
+test('selects the actual formal release commit, CI run and unexpired artifact',{skip:process.platform==='win32'},t=>{const f=fixture(t),r=f.run();assert.equal(r.status,0,r.stderr);assert.deepEqual(JSON.parse(fs.readFileSync(f.guard)),{id:42,tag:'v1.0.8',sha});assert.match(fs.readFileSync(f.output,'utf8'),/run=101\nartifact=ghship-candidate-1\ntag=v1.0.8/);});
+test('rejects stale, mismatched, unverified or unavailable release inputs',{skip:process.platform==='win32'},t=>{
+ const cases=[{event:{release:{id:41,tag_name:'v1.0.8',draft:false,prerelease:false}}},{event:{release:{id:42,tag_name:'v1.0.8',draft:false,prerelease:true}}},{state:{annotated:{object:{type:'commit',sha:'c'.repeat(40)}}}},{state:{comparison:{status:'diverged',base_commit:{sha}}}},{state:{runs:[]}},{state:{artifacts:[{name:'ghship-candidate-1',expired:true}]}},{env:{GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',RELEASE_RUN:'999',RELEASE_ARTIFACT:'ghship-candidate-1'}}];
+ for(const c of cases){const f=fixture(t,c),r=f.run();assert.notEqual(r.status,0,JSON.stringify(c));assert.equal(fs.existsSync(f.guard),false);}
+});
+test('manual recovery may use the matching latest tag and explicitly identified candidate',{skip:process.platform==='win32'},t=>{const f=fixture(t,{env:{GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/tags/v1.0.8',RELEASE_RUN:'101',RELEASE_ARTIFACT:'ghship-candidate-1'}}),r=f.run();assert.equal(r.status,0,r.stderr);});
+
+test('rejects older artifacts and incomplete or skipped platform attempts',{skip:process.platform==='win32'},t=>{
+ const cases=[
+  {state:{jobs:[]}},
+  {state:{jobs:[{name:'npm package',run_id:101,run_attempt:1,status:'completed',conclusion:'success',steps:[]}]}},
+  {state:{runs:[{id:101,head_sha:sha,head_branch:'main',event:'push',path:'.github/workflows/verification.yml',status:'completed',conclusion:'success',run_attempt:2}],artifacts:[{name:'ghship-candidate-1',expired:false},{name:'ghship-candidate-2',expired:false}]},env:{GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/tags/v1.0.8',RELEASE_RUN:'101',RELEASE_ARTIFACT:'ghship-candidate-1'}}
+ ];
+ for(const c of cases){const f=fixture(t,c),r=f.run();assert.notEqual(r.status,0,JSON.stringify(c));assert.equal(fs.existsSync(f.guard),false);}
+});
