@@ -187,3 +187,28 @@ func TestOverrideLoginMatchingIsCaseInsensitive(t *testing.T) {
 		t.Fatal("different login accepted")
 	}
 }
+
+func TestRoleGitRejectsOtherProjectSelectors(t *testing.T) {
+	base, root := fixture(t)
+	setupAuthHome(t)
+	t.Setenv("GHSHIP_DISPATCHER", "dispatcher")
+	t.Setenv("TEST_ACTOR", "dispatcher")
+	other := filepath.Join(base, "other")
+	gitCmd(t, "init", "--quiet", other)
+	for _, global := range [][]string{{"-C", other}, {"--git-dir=" + filepath.Join(other, ".git"), "--work-tree=" + other}, {"--git-dir=" + filepath.Join(other, ".git"), "--work-tree=" + root}} {
+		args := append([]string{"dispatcher", "--"}, global...)
+		args = append(args, "rev-parse", "--show-toplevel")
+		var out bytes.Buffer
+		if err := roleGit(args, nil, &out); err == nil {
+			t.Errorf("other project accepted: %v", global)
+		}
+	}
+	nested := filepath.Join(root, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := roleGit([]string{"dispatcher", "--", "-C", nested, "rev-parse", "--show-toplevel"}, nil, &out); err != nil {
+		t.Fatalf("same project subdirectory rejected: %v", err)
+	}
+}
