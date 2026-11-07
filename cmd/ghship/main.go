@@ -71,6 +71,8 @@ Windows current-user DPAPI.
 Dispatcher uses local gh login. Ambient token variables are removed.
 Explicit GHSHIP_AUTHOR/REVIEWER/DISPATCHER and external PAT_FILE overrides are supported
 for controlled integration; verify login before invoking actual native gh command.
+The origin selects the host and must match any existing project binding. If no
+binding or origin exists, explicit overrides use github.com.
 Arguments, streams and gh exit codes preserved. Credentials never printed.
 Each role is used only by that role's authorized executor; account switching is not
 independent acceptance. Git authenticated operations: ghship git author -- push ...
@@ -279,6 +281,32 @@ func output(env []string, name string, a ...string) (string, error) {
 	}
 	return strings.TrimSpace(string(b)), nil
 }
+
+// Resolve a physical working tree before any role identity or native command.
+func currentProjectRoot() (string, error) {
+	root, err := output(nil, "git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("run inside the target Git working tree")
+	}
+	return root, nil
+}
+
 func roleEnvironment(role string) ([]string, error) {
 	var expected, file string
 	switch role {
@@ -293,33 +321,34 @@ func roleEnvironment(role string) ([]string, error) {
 	default:
 		return nil, usage("unknown role")
 	}
+	root, e := currentProjectRoot()
+	if e != nil {
+		return nil, e
+	}
 	env := cleanGHEnv()
 	host := "github.com"
-	if expected == "" {
-		root, e := output(nil, "git", "rev-parse", "--show-toplevel")
-		if e != nil {
-			return nil, e
+	binding, bindErr := readBinding(root)
+	if bindErr != nil && !os.IsNotExist(bindErr) {
+		return nil, errors.New("project role binding invalid or unavailable")
+	}
+	if bindErr != nil && expected == "" {
+		return nil, errors.New("project role binding unavailable; run ghship init")
+	}
+	origin, originErr := output(nil, "git", "remote", "get-url", "origin")
+	if originErr != nil && bindErr == nil {
+		return nil, originErr
+	}
+	if originErr == nil {
+		repo, err := parseOrigin(origin)
+		if err != nil {
+			return nil, err
 		}
-		root, e = filepath.EvalSymlinks(root)
-		if e != nil {
-			return nil, e
-		}
-		binding, e := readBinding(root)
-		if e != nil {
-			return nil, errors.New("project role binding unavailable; run ghship init")
-		}
-		origin, e := output(nil, "git", "remote", "get-url", "origin")
-		if e != nil {
-			return nil, e
-		}
-		repo, e := parseOrigin(origin)
-		if e != nil {
-			return nil, e
-		}
-		if repo != binding.Repo {
+		if bindErr == nil && repo != binding.Repo {
 			return nil, errors.New("origin differs from project binding")
 		}
-		host = strings.Split(binding.Repo, "/")[0]
+		host = strings.Split(repo, "/")[0]
+	}
+	if expected == "" {
 		switch role {
 		case "author":
 			expected = binding.Author
@@ -329,9 +358,9 @@ func roleEnvironment(role string) ([]string, error) {
 			expected = binding.Admin
 		}
 		if role != "dispatcher" {
-			api, e := accountAPI(host, expected)
-			if e != nil {
-				return nil, e
+			api, err := accountAPI(host, expected)
+			if err != nil {
+				return nil, err
 			}
 			env = append(env, githubTokenEnv(host)+"="+api.token)
 		}
@@ -340,14 +369,6 @@ func roleEnvironment(role string) ([]string, error) {
 	}
 	env = append(env, "GH_HOST="+host)
 	if file != "" {
-		root, e := output(nil, "git", "rev-parse", "--show-toplevel")
-		if e != nil {
-			return nil, e
-		}
-		root, e = filepath.EvalSymlinks(root)
-		if e != nil {
-			return nil, e
-		}
 		file, e = filepath.EvalSymlinks(file)
 		if e != nil {
 			return nil, errors.New("credential unavailable")

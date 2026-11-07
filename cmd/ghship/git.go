@@ -12,6 +12,8 @@ const gitHelp = `ghship git ROLE -- GIT_ARGUMENTS...
 Verifies the current project's author/reviewer/dispatcher identity, then invokes
 Git with ephemeral gh credentials. No persistent helper/global account changes,
 no exported token, no shell interpolation of user arguments. Native exit preserved.
+Run inside the target Git working tree; an existing binding must match origin.
+Explicit overrides use the origin host, or github.com if unbound without origin.
 Use git directly for local operations; use this for authenticated push/fetch.
 Example: ghship git author -- push -u origin HEAD
 `

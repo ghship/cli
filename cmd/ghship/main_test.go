@@ -207,6 +207,7 @@ func TestHelpAndJSON(t *testing.T) {
 }
 func TestRoles(t *testing.T) {
 	r, _ := fixture(t)
+	setupAuthHome(t)
 	t.Setenv("GHSHIP_AUTHOR", "author")
 	t.Setenv("GHSHIP_DISPATCHER", "dispatcher")
 	token := filepath.Join(r, "token")
@@ -356,6 +357,7 @@ func TestEnterpriseRoleEnvironment(t *testing.T) {
 }
 func TestRoleGitRewritesSSHWithoutGlobalConfiguration(t *testing.T) {
 	_, _ = fixture(t)
+	setupAuthHome(t)
 	t.Setenv("GHSHIP_AUTHOR", "author")
 	p := filepath.Join(t.TempDir(), "token")
 	os.WriteFile(p, []byte("synthetic"), 0600)
