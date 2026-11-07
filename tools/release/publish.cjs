@@ -101,7 +101,15 @@ async function publish(p){
   guardFromEnvironment(manifest);
   const r=npm(['dist-tag','add',`${main.name}@${manifest.version}`,'latest']);
   if(r.status!==0)throw Error(`Cannot update latest: ${r.stderr.trim()}`);
-  if(latest()!==manifest.version)throw Error('latest tag did not update');
+  let verified=false;
+  for(let i=0;i<12;i++){
+   guardFromEnvironment(manifest);
+   const observed=latest();
+   if(observed===manifest.version){verified=true;break;}
+   if(observed!==current)throw Error(`Unexpected latest during readback: ${observed}`);
+   if(i<11)await new Promise(resolve=>setTimeout(resolve,5000));
+  }
+  if(!verified)throw Error('latest tag did not update within the verification window');
  }
  console.log(`Published and verified ${main.name}@${manifest.version} as latest`);
 })().catch(error=>{console.error(error.message);process.exitCode=1});
