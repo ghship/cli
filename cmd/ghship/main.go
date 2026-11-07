@@ -54,7 +54,8 @@ COMMAND: version, install, update, uninstall, user, init, project, doctor,
 git, gh, next, tidy. Command --help and user/project SUBCOMMAND --help are supported.
 Exit: 0 scope complete, 1 failure, 2 usage, 3 next no slice, 4 setup/entry pending.
 gh preserves the native gh exit code after identity verification.
-JSON results on stdout; diagnostics on stderr. gh uses native --json.
+JSON results, when available, are on stdout; errors and guidance are on stderr.
+A failure may have no JSON result. gh uses native --json.
 Environment: GHSHIP_AUTHOR, GHSHIP_REVIEWER, GHSHIP_DISPATCHER;
 GHSHIP_AUTHOR_PAT_FILE, GHSHIP_REVIEWER_PAT_FILE override external credential paths.
 Default accounts: current project role binding (run init first).

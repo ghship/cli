@@ -110,6 +110,13 @@ func run() error {
 	if _, e = os.Stat(invalidDir); !os.IsNotExist(e) {
 		return fmt.Errorf("invalid npm init argument changed installation")
 	}
+	usageOutput, usageErr := npm("exec", "--yes", "--package", tarball, "--", "ghship", "install", "--dir", invalidDir, "--unknown-option", "--json")
+	if e = expectRefusal(usageOutput, usageErr, 2, "Unknown lifecycle option"); e != nil {
+		return fmt.Errorf("npm usage exit: %w", e)
+	}
+	if _, e = os.Stat(invalidDir); !os.IsNotExist(e) {
+		return fmt.Errorf("invalid npm option changed installation")
+	}
 	fmt.Println("PASS invalid npm initialization rejected before installation")
 	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
 		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)
