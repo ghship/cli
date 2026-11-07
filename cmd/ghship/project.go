@@ -58,12 +58,32 @@ type projectManifest struct {
 }
 
 func projectRoot(path string) (string, error) {
-	root, e := gitAt(path, "rev-parse", "--show-toplevel")
+	if path == "" {
+		return "", usage("--project requires a path")
+	}
+	physical, e := filepath.EvalSymlinks(path)
 	if e != nil {
 		return "", e
 	}
-	return filepath.EvalSymlinks(root)
+	physical, e = filepath.Abs(physical)
+	if e != nil {
+		return "", e
+	}
+	root, e := gitAt(physical, "rev-parse", "--show-toplevel")
+	if e != nil {
+		return "", e
+	}
+	root, e = filepath.EvalSymlinks(root)
+	if e != nil {
+		return "", e
+	}
+	rel, e := filepath.Rel(root, physical)
+	if e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("project path is outside its Git working tree")
+	}
+	return root, nil
 }
+
 func loadProjectManifest(root string) (projectManifest, error) {
 	var m projectManifest
 	p := filepath.Join(root, ".ghship", "install.json")

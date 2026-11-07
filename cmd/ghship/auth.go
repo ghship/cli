@@ -192,18 +192,8 @@ func readTokenFile(p string) (string, error) {
 	if e = noLinks(absolute); e != nil {
 		return "", e
 	}
-	root, e := output(nil, "git", "rev-parse", "--show-toplevel")
-	if e == nil {
-		root, _ = filepath.EvalSymlinks(root)
-		rel, relErr := filepath.Rel(root, absolute)
-		if relErr != nil {
-			// Windows cannot express a relative path between different volumes.
-			if runtime.GOOS != "windows" || strings.EqualFold(filepath.VolumeName(root), filepath.VolumeName(absolute)) {
-				return "", errors.New("cannot determine token file repository scope")
-			}
-		} else if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", errors.New("token file must be outside repository")
-		}
+	if e = checkTokenRepositoryScope(absolute); e != nil {
+		return "", e
 	}
 	st, e := os.Stat(absolute)
 	if e != nil || !st.Mode().IsRegular() {
@@ -218,6 +208,39 @@ func readTokenFile(p string) (string, error) {
 	}
 	defer input.Close()
 	return readCredentialJSON(input)
+}
+
+// Inspect the file's own ancestors, including linked worktrees, without relying
+// on the caller's working directory, Git executable, or Git environment.
+func checkTokenRepositoryScope(path string) error {
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		_, err := os.Lstat(filepath.Join(dir, ".git"))
+		if err == nil {
+			return errors.New("token file must be outside repository")
+		}
+		if !os.IsNotExist(err) {
+			return errors.New("cannot determine token file repository scope")
+		}
+		// Bare repositories have no .git marker; recognize their normal layout.
+		bare := true
+		for _, name := range []string{"HEAD", "objects", "refs"} {
+			_, err = os.Lstat(filepath.Join(dir, name))
+			if os.IsNotExist(err) {
+				bare = false
+				continue
+			}
+			if err != nil {
+				return errors.New("cannot determine token file repository scope")
+			}
+		}
+		if bare {
+			return errors.New("token file must be outside repository")
+		}
+		if parent := filepath.Dir(dir); parent == dir {
+			break
+		}
+	}
+	return nil
 }
 func readCredentialJSON(input io.Reader) (string, error) {
 	if input == nil {
