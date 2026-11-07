@@ -647,6 +647,15 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
+	entries, e := os.ReadDir(standaloneDir)
+	if e != nil {
+		return e
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".ghship-backup-") {
+			return fmt.Errorf("direct standalone update left a backup: %s", entry.Name())
+		}
+	}
 	fmt.Println("PASS direct standalone upgrade without Node or npm")
 	if _, e = command(binary, "uninstall", "--standalone", "--json"); e != nil {
 		return e
