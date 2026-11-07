@@ -15,6 +15,13 @@ func canDeferBackup(err error) bool {
 	return errors.Is(err, os.ErrPermission) || errors.Is(err, windows.ERROR_SHARING_VIOLATION)
 }
 
+func explainRenameError(err error) error {
+	if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+		return fmt.Errorf("%w; close programs using the installation and retry", err)
+	}
+	return err
+}
+
 // Open regular backups without allowing concurrent writes or renames, then
 // delete the same verified file by handle. A mapped executable can remain
 // locked until its process exits; callers may explicitly defer that cleanup.

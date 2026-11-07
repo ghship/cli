@@ -5,6 +5,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,17 @@ import (
 
 	"golang.org/x/sys/windows"
 )
+
+func TestSharingViolationExplainsRecovery(t *testing.T) {
+	err := explainRenameError(windows.ERROR_SHARING_VIOLATION)
+	if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) || !strings.Contains(err.Error(), "close programs using the installation and retry") {
+		t.Fatalf("sharing violation lost its cause or recovery guidance: %v", err)
+	}
+	other := windows.ERROR_ACCESS_DENIED
+	if got := explainRenameError(other); got != other {
+		t.Fatalf("unrelated failure was changed: %v", got)
+	}
+}
 
 func TestDeferredCleanupValidatesDigest(t *testing.T) {
 	exe, err := os.Executable()

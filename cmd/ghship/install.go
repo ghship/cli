@@ -218,7 +218,7 @@ func commitReplacements(items []replacement, deferBinary ...string) error {
 				return errors.Join(e, rollback(i-1))
 			}
 			if e = os.Rename(x.dest, backup); e != nil {
-				return errors.Join(e, rollback(i-1))
+				return errors.Join(explainRenameError(e), rollback(i-1))
 			}
 			x.backup = backup
 		} else if !os.IsNotExist(e) {
@@ -228,7 +228,7 @@ func commitReplacements(items []replacement, deferBinary ...string) error {
 		}
 		if x.stage != "" {
 			if e := os.Rename(x.stage, x.dest); e != nil {
-				return errors.Join(e, rollback(i))
+				return errors.Join(explainRenameError(e), rollback(i))
 			}
 		}
 	}
