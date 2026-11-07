@@ -29,7 +29,7 @@ GitHub下载渠道自带skill，不需Node/Go。npm 使用与 Node.js 操作系�
 {"token":"github_pat_REPLACE_WITH_YOUR_TOKEN"}
 ```
 
-用户名和host由CLI指定；add、update和delete未指定host时使用github.com。list未指定host时列出所有已保存主机，`--host`和`--user`可分别过滤主机与登录名。AI从仓库外JSON文件调用：
+用户名支持GitHub普通用户和带企业短码的托管用户，host由CLI指定；add、update和delete未指定host时使用github.com。list未指定host时列出所有已保存主机，`--host`和`--user`可分别过滤主机与登录名。AI从仓库外JSON文件调用：
 
 ```sh
 ghship user add --user acceptor --token-file /secure/acceptor.json --non-interactive --json

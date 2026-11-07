@@ -13,6 +13,7 @@ import (
 const userHelp = `ghship user add|update|delete|list [--host HOST] [--user LOGIN] [--json]
 add/update/delete use github.com when --host is omitted. list without --host
 checks all saved hosts; --host and --user filter the list when supplied.
+GitHub Enterprise Managed User logins with their enterprise shortcode are supported.
 add/update: --token TOKEN | --token-file PATH | --token-stdin (choose one).
 Without a source, interactive input is hidden. --token-file and --token-stdin read JSON containing
 exactly one string field: {"token":"TOKEN"}. Unknown/duplicate fields, trailing
@@ -84,12 +85,21 @@ func listUsers(args []string, out io.Writer) error {
 	if e := f.Parse(args); e != nil || f.NArg() != 0 {
 		return usage("invalid user list arguments")
 	}
+	emptyFilter := false
+	f.Visit(func(value *flag.Flag) {
+		if (value.Name == "host" || value.Name == "user") && value.Value.String() == "" {
+			emptyFilter = true
+		}
+	})
+	if emptyFilter {
+		return usage("list filters require a nonempty value")
+	}
 	*host = strings.ToLower(*host)
 	*user = strings.ToLower(*user)
 	if *host != "" && !validHost.MatchString(*host) {
 		return usage("invalid host")
 	}
-	if *user != "" && !validLogin.MatchString(*user) {
+	if *user != "" && !validStoredLogin(*user) {
 		return usage("invalid username")
 	}
 	base, e := configRoot()
@@ -130,7 +140,7 @@ func listUsers(args []string, out io.Writer) error {
 				continue
 			}
 			login := strings.TrimSuffix(entry.Name(), ".json")
-			if !validLogin.MatchString(login) || login != strings.ToLower(login) {
+			if !validStoredLogin(login) || login != strings.ToLower(login) {
 				continue
 			}
 			if *user != "" && login != *user {

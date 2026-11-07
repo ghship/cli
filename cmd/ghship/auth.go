@@ -20,6 +20,13 @@ import (
 )
 
 var validLogin = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$`)
+
+// Existing standard-form files remain discoverable; managed usernames add a
+// safe underscore-separated enterprise shortcode.
+func validStoredLogin(login string) bool {
+	return validLogin.MatchString(login) || validGitHubLogin(login)
+}
+
 var validHost = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*$`)
 var apiBaseOverride string // Tests only; never exposed as a command or environment setting.
 type account struct {
@@ -100,7 +107,7 @@ func configRoot() (string, error) {
 	return filepath.Join(h, ".config", "ghship"), nil
 }
 func accountPath(host, user string) (string, error) {
-	if !validHost.MatchString(host) || !validLogin.MatchString(user) {
+	if !validHost.MatchString(host) || !validStoredLogin(user) {
 		return "", usage("invalid GitHub host or username")
 	}
 	root, e := configRoot()

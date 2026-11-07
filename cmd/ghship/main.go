@@ -556,7 +556,7 @@ func next(a []string, in io.Reader, out io.Writer) error {
 			return usage("unknown next option")
 		}
 	}
-	if authorSpecified && !validQueueAuthor(author) {
+	if authorSpecified && !validGitHubLogin(author) {
 		return usage("--author must be a valid GitHub login")
 	}
 	if milestone != 0 {

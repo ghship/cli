@@ -160,7 +160,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 
 var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
 
-func validGitHubLogin(value string) bool {
+func validStandardLogin(value string) bool {
 	return validLogin.MatchString(value) && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
 }
 
