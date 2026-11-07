@@ -93,3 +93,20 @@ func TestNextEmptyQueueHasNoCandidateExit(t *testing.T) {
 		t.Fatalf("empty queue: %q %v", out.String(), err)
 	}
 }
+
+func TestNextAcceptsEnterpriseManagedUsernames(t *testing.T) {
+	for _, login := range []string{"mona-cat_octo", "octo_admin", "2abvd19d_admin"} {
+		var out bytes.Buffer
+		input := "[" + queueFixture(1, "", 0, 0) + "," + queueFixture(10, strings.ToUpper(login), 0, 0) + "]"
+		if err := next([]string{"--author", login, "--json"}, strings.NewReader(input), &out); err != nil {
+			t.Fatalf("%s: %v", login, err)
+		}
+		var got struct {
+			Issue  int    `json:"issue"`
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil || got.Issue != 10 || got.Action != "resume" {
+			t.Fatalf("%s: %s %v", login, out.String(), err)
+		}
+	}
+}
