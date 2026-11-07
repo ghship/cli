@@ -466,7 +466,7 @@ func run() error {
 	invoke := func(a ...string) ([]byte, error) {
 		if runtime.GOOS == "windows" {
 			entry := filepath.Join(tmp, "global", "ghship.cmd")
-			return command("cmd.exe", "/d", "/s", "/c", `"`+entry+`" `+strings.Join(a, " "))
+			return command("cmd.exe", append([]string{"/d", "/c", entry}, a...)...)
 		}
 		return command(filepath.Join(tmp, "global", "bin", "ghship"), a...)
 	}
