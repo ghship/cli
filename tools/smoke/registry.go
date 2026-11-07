@@ -16,11 +16,12 @@ import (
 // registry serves only the exact local platform tarballs. It records every
 // tarball request so the test can distinguish metadata from binary downloads.
 type registry struct {
-	server       *httptest.Server
-	mu           sync.Mutex
-	downloads    map[string]int
-	registerMain func(string, string) error
-	swapPlatform func(string, string) (func(), error)
+	server         *httptest.Server
+	mu             sync.Mutex
+	downloads      map[string]int
+	registerMain   func(string, string) error
+	swapPlatform   func(string, string) (func(), error)
+	setMainFailure func(string) func()
 }
 
 func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*registry, error) {
@@ -65,6 +66,14 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		packages[name] = item{meta: meta, data: data}
 	}
 	r := &registry{downloads: map[string]int{}}
+	mainFailure := ""
+	r.setMainFailure = func(value string) func() {
+		r.mu.Lock()
+		previous := mainFailure
+		mainFailure = value
+		r.mu.Unlock()
+		return func() { r.mu.Lock(); mainFailure = previous; r.mu.Unlock() }
+	}
 	r.swapPlatform = func(dir, archive string) (func(), error) {
 		b, err := os.ReadFile(filepath.Join(dir, "package.json"))
 		if err != nil {
@@ -141,8 +150,28 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 			requestedVersion, name = name[i+1:], name[:i]
 		}
 		r.mu.Lock()
+		failure := mainFailure
 		item, ok := packages[name]
 		r.mu.Unlock()
+		if name == "@ghship/cli" && requestedVersion == "latest" {
+			if failure == "disconnect" {
+				if h, ok := w.(http.Hijacker); ok {
+					c, _, err := h.Hijack()
+					if err == nil {
+						_ = c.Close()
+					}
+					return
+				}
+			}
+			if failure == "unavailable" {
+				http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if failure == "redirect" {
+				http.Redirect(w, req, "https://example.com/untrusted", http.StatusFound)
+				return
+			}
+		}
 		if !ok {
 			http.NotFound(w, req)
 			return

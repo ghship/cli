@@ -599,6 +599,23 @@ func run() error {
 		return e
 	}
 	standaloneEnv := append(append([]string{}, env...), "PATH="+filepath.Join(tmp, "empty-path"))
+	for _, failure := range []string{"disconnect", "redirect"} {
+		restore := registry.setMainFailure(failure)
+		err := refused(func() ([]byte, error) { return runCommand(standaloneEnv, installedBinary, "update", "--json") }, "cannot download update")
+		restore()
+		if err != nil {
+			return fmt.Errorf("standalone %s failure preservation: %w", failure, err)
+		}
+	}
+	invalidTemp := filepath.Join(tmp, "not-a-directory")
+	if e = os.WriteFile(invalidTemp, []byte("not a directory"), 0600); e != nil {
+		return e
+	}
+	writeFailureEnv := append(append([]string{}, standaloneEnv...), "TMPDIR="+invalidTemp, "TMP="+invalidTemp, "TEMP="+invalidTemp)
+	if e = refused(func() ([]byte, error) { return runCommand(writeFailureEnv, installedBinary, "update", "--json") }, "not-a-directory"); e != nil {
+		return fmt.Errorf("standalone temporary write failure preservation: %w", e)
+	}
+	fmt.Println("PASS direct standalone network, redirect and temporary write failures preserve installation")
 	// A registry can return a well-formed platform tarball with a valid SRI
 	// that nevertheless does not match the candidate main package's checksum.
 	// Preserve every installed file on that mismatch.
@@ -638,6 +655,15 @@ func run() error {
 	restoreWrong()
 	if b, e = runCommand(standaloneEnv, installedBinary, "update", "--json"); e != nil {
 		return fmt.Errorf("direct standalone upgrade: %w: %s", e, b)
+	}
+	if runtime.GOOS == "windows" {
+		var result map[string]string
+		if json.Unmarshal(b, &result) != nil || result["pendingBackup"] == "" || !strings.Contains(result["cleanup"], "scheduled") || !strings.Contains(result["cleanup"], "may remain") {
+			return fmt.Errorf("Windows update did not report pending cleanup: %s", b)
+		}
+		if filepath.Dir(result["pendingBackup"]) != standaloneDir || !strings.HasPrefix(filepath.Base(result["pendingBackup"]), ".ghship-backup-") {
+			return fmt.Errorf("Windows update reported invalid backup path")
+		}
 	}
 	if e = checkStandaloneVersion(assets.Version); e != nil {
 		return e

@@ -6,10 +6,13 @@ import (
 	"compress/gzip"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,6 +50,39 @@ func TestUpdateArchiveValidation(t *testing.T) {
 	}
 	if _, err := updateArchiveFile(data.Bytes(), "package/bin/missing", 8); err == nil {
 		t.Fatal("missing file accepted")
+	}
+}
+
+func TestWindowsCleanupStatusAndStartFailure(t *testing.T) {
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "ghship.exe")
+	backup := filepath.Join(dir, ".ghship-backup-123")
+	child, err := json.Marshal(map[string]string{"version": "1.0.7", "pendingBackup": backup})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	startErr := errors.New("start failed")
+	err = finishStandaloneWindowsUpdate(&output, child, dir, "1.0.7", binary, strings.Repeat("a", 64), true, func(_, _, _ string) error { return startErr })
+	var pending cliError
+	if !errors.As(err, &pending) || pending.code != 4 || !strings.Contains(err.Error(), backup) || !strings.Contains(err.Error(), "cleanup could not start") {
+		t.Fatalf("cleanup failure not reported: %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatal("reported success despite cleanup start failure")
+	}
+	err = finishStandaloneWindowsUpdate(&output, child, dir, "1.0.7", binary, strings.Repeat("a", 64), true, func(gotBinary, gotBackup, hash string) error {
+		if gotBinary != binary || gotBackup != backup || hash != strings.Repeat("a", 64) {
+			t.Fatal("wrong cleanup request")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]string
+	if json.Unmarshal(output.Bytes(), &result) != nil || result["pendingBackup"] != backup || !strings.Contains(result["cleanup"], "may remain") {
+		t.Fatalf("cleanup status missing: %s", output.String())
 	}
 }
 

@@ -141,6 +141,33 @@ func validateUpdateArchiveMetadata(data []byte, expected updatePackage) error {
 	return nil
 }
 
+func finishStandaloneWindowsUpdate(out io.Writer, childOutput []byte, dir, targetVersion, binary, oldHash string, asJSON bool, startCleanup func(string, string, string) error) error {
+	var result map[string]string
+	if json.Unmarshal(childOutput, &result) != nil {
+		return errors.New("update completed but cleanup status cannot be verified")
+	}
+	if backup := result["pendingBackup"]; backup != "" {
+		if !strings.EqualFold(filepath.Dir(backup), filepath.Dir(binary)) || !strings.HasPrefix(filepath.Base(backup), ".ghship-backup-") {
+			return errors.New("update completed but backup path is invalid")
+		}
+		if err := startCleanup(binary, backup, oldHash); err != nil {
+			return cliError{4, fmt.Errorf("update completed; previous executable retained at %s and automatic cleanup could not start: %w", backup, err)}
+		}
+		result["cleanup"] = "scheduled; previous executable may remain if cleanup fails"
+	}
+	if asJSON {
+		return json.NewEncoder(out).Encode(result)
+	}
+	if _, err := fmt.Fprintf(out, "update: %s (%s)\nCLI: %s\n", dir, targetVersion, binary); err != nil {
+		return err
+	}
+	if backup := result["pendingBackup"]; backup != "" {
+		_, err := fmt.Fprintf(out, "Previous executable cleanup scheduled: %s; it may remain if cleanup fails.\n", backup)
+		return err
+	}
+	return nil
+}
+
 func standaloneDirectUpdate(old manifest, dir string, args []string, out io.Writer) error {
 	if old.Binary == nil {
 		return errors.New("standalone installation required")
@@ -327,26 +354,7 @@ func standaloneDirectUpdate(old manifest, dir string, args []string, out io.Writ
 		return fmt.Errorf("update completed but verification failed: %w", err)
 	}
 	if runtime.GOOS == "windows" {
-		var result map[string]string
-		if json.Unmarshal(childOutput.Bytes(), &result) != nil {
-			return errors.New("update completed but cleanup status cannot be verified")
-		}
-		if backup := result["pendingBackup"]; backup != "" {
-			if err = startDeferredBackupCleanup(updated.Binary.Path, backup, old.Binary.Hash); err != nil {
-				return cliError{4, fmt.Errorf("update completed; previous executable retained at %s and automatic cleanup could not start: %w", backup, err)}
-			}
-			result["cleanup"] = "scheduled; previous executable may remain if cleanup fails"
-		}
-		if asJSON {
-			return json.NewEncoder(out).Encode(result)
-		}
-		if _, err = fmt.Fprintf(out, "update: %s (%s)\nCLI: %s\n", dir, main.Version, updated.Binary.Path); err != nil {
-			return err
-		}
-		if backup := result["pendingBackup"]; backup != "" {
-			_, err = fmt.Fprintf(out, "Previous executable cleanup scheduled: %s; it may remain if cleanup fails.\n", backup)
-		}
-		return err
+		return finishStandaloneWindowsUpdate(out, childOutput.Bytes(), dir, main.Version, updated.Binary.Path, old.Binary.Hash, asJSON, startDeferredBackupCleanup)
 	}
 	_, err = io.Copy(out, &childOutput)
 	return err
