@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {validReleaseTag,validateLatest,chooseVerification,validateTrigger,chooseArtifact,completePages}=require('./release_guard.cjs');
+const {validReleaseTag,validateLatest,chooseVerification,validateTrigger,chooseArtifact,requireAttemptJobs,completePages}=require('./release_guard.cjs');
 const sha='a'.repeat(40), other='b'.repeat(40);
 const manifest={version:'1.0.8',packages:[{name:'@ghship/cli',filename:'ghship-cli-1.0.8.tgz',sha256:'c'.repeat(64)},{name:'@ghship/cli-linux-x64',filename:'ghship-cli-linux-x64-1.0.8.tgz',sha256:'d'.repeat(64)}]};
 const release={id:42,tag_name:'v1.0.8',draft:false,prerelease:false,assets:manifest.packages.map(p=>({name:p.filename,state:'uploaded',digest:'sha256:'+p.sha256}))};
@@ -43,4 +43,14 @@ test('selects only the newest successful main push verification for the exact co
  assert.throws(()=>chooseVerification([{...good,head_sha:other}],sha));
  for(const bad of [{...good,head_branch:'feature'},{...good,event:'pull_request'},{...good,path:'.github/workflows/other.yml'},{...good,status:'in_progress',conclusion:null},{...good,conclusion:'failure'}])assert.throws(()=>chooseVerification([bad],sha));
  assert.throws(()=>chooseVerification([good,{...good,id:21,conclusion:'failure'}],sha));
+});
+
+test('requires packaging and all six native checks in the exact successful attempt',()=>{
+ const step=name=>({name,status:'completed',conclusion:'success'});
+ const run={id:20,run_attempt:2};
+ const names=['npm package',...['linux-amd64','linux-arm64','darwin-amd64','darwin-arm64','windows-amd64','windows-arm64'].map(p=>`native (${p})`)];
+ const jobs=names.map(name=>({name,run_id:20,run_attempt:2,status:'completed',conclusion:'success',steps:name==='npm package'?[step('Pack candidate once'),step('Run actions/upload-artifact@abc')]:['Download shared candidate','Verify and extract the exact shared candidate','Test the exact shared candidate'].map(step)}));
+ assert.doesNotThrow(()=>requireAttemptJobs(jobs,run));
+ const modified=(i,change)=>jobs.map((j,n)=>n===i?{...j,...change}:j);
+ for(const bad of [jobs.slice(0,-1),[...jobs,jobs[1]],modified(0,{run_attempt:1}),modified(1,{run_id:19}),modified(2,{conclusion:'skipped'}),modified(3,{steps:[]}),modified(0,{steps:[step('Pack candidate once')]})])assert.throws(()=>requireAttemptJobs(bad,run));
 });

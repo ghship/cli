@@ -31,6 +31,25 @@ function validateTrigger(eventName,event,ref,sha,latest,tagCommit){
  }else throw Error('Unsupported release trigger');
  return {id:latest.id,tag:latest.tag_name,sha};
 }
+function requireAttemptJobs(jobs,run){
+ if(!Array.isArray(jobs)||!Number.isSafeInteger(run?.id)||!Number.isSafeInteger(run?.run_attempt))throw Error('Invalid verification jobs');
+ const names=['npm package',...['linux-amd64','linux-arm64','darwin-amd64','darwin-arm64','windows-amd64','windows-arm64'].map(p=>`native (${p})`)];
+ for(const name of names){
+  const matches=jobs.filter(j=>j.name===name);
+  if(matches.length!==1)throw Error(`Missing or ambiguous verification job: ${name}`);
+  const job=matches[0];
+  if(job.run_id!==run.id||job.run_attempt!==run.run_attempt||job.status!=='completed'||job.conclusion!=='success'||!Array.isArray(job.steps))throw Error(`Verification job did not pass in the candidate attempt: ${name}`);
+  const required=name==='npm package'?['Pack candidate once']:['Download shared candidate','Verify and extract the exact shared candidate','Test the exact shared candidate'];
+  for(const step of required){
+   const matches=job.steps.filter(s=>s.name===step);
+   if(matches.length!==1||matches[0].status!=='completed'||matches[0].conclusion!=='success')throw Error(`Required verification step did not pass: ${name}: ${step}`);
+  }
+  if(name==='npm package'){
+   const upload=job.steps.filter(s=>typeof s.name==='string'&&s.name.startsWith('Run actions/upload-artifact@'));
+   if(upload.length!==1||upload[0].status!=='completed'||upload[0].conclusion!=='success')throw Error('Candidate upload did not pass');
+  }
+ }
+}
 function chooseArtifact(artifacts,name){
  if(typeof name!=='string'||name.trim()!==name||!/^ghship-candidate-[1-9]\d*$/.test(name)||!Array.isArray(artifacts))throw Error('Invalid candidate artifact');
  const matches=artifacts.filter(a=>a.name===name&&a.expired===false);
@@ -83,4 +102,4 @@ function guardFromEnvironment(manifest){
  const guard=JSON.parse(fs.readFileSync(file,'utf8'));
  guardLatest(process.env.GITHUB_REPOSITORY,guard,manifest);
 }
-module.exports={validReleaseTag,validateLatest,chooseVerification,validateTrigger,chooseArtifact,completePages,ghJSON,ghPages,resolveTagCommit,requireMainAncestry,guardLatest,guardFromEnvironment};
+module.exports={validReleaseTag,validateLatest,chooseVerification,validateTrigger,chooseArtifact,requireAttemptJobs,completePages,ghJSON,ghPages,resolveTagCommit,requireMainAncestry,guardLatest,guardFromEnvironment};

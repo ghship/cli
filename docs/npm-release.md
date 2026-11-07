@@ -2,9 +2,9 @@
 
 发布对象是主分支 verification 成功运行中保存的同一批七个包，不重新构建。主包与平台包使用相同版本，平台包不得含其他平台的可执行文件。
 
-发布正式 GitHub Latest 前，先完成该提交的六平台 CI、指定测试机和独立验收，再将同一候选的七个 npm 包作为 Release 附件。`npm-release.yml` 收到 `release.published` 后回读当前 Latest，拒绝草稿、预发行、非 Latest、标签与提交不匹配以及不在 main 上的提交；自动选择该提交最新的成功 main verification 和未过期构件。流程核对 Release 附件的服务端摘要，并实际下载七包与 CI 候选逐字节摘要比较；缺项、结果不明或不匹配时不发布。
+发布正式 GitHub Latest 前，先完成该提交的六平台 CI、指定测试机和独立验收，再将同一候选的七个 npm 包作为 Release 附件。`npm-release.yml` 收到 `release.published` 后回读当前 Latest，拒绝草稿、预发行、非 Latest、标签与提交不匹配以及不在 main 上的提交；自动选择该提交最新的成功 main verification 和该次运行的未过期构件，并确认打包和六个平台的必要步骤均在同一次 attempt 中成功。流程核对 Release 附件的服务端摘要，并实际下载七包与 CI 候选逐字节摘要比较；缺项、结果不明或不匹配时不发布。
 
-人工恢复可通过 `workflow_dispatch` 指定该 Release 标签（例如 `gh workflow run npm-release.yml --ref vX.Y.Z -f verification_run=RUN -f artifact=ghship-candidate-N`），也可在 main 仍指向该发行提交时使用 main。恢复入口同样要求当前正式 Latest、匹配提交和最新成功 verification，不得借此发布未验收构件。重跑部分作业导致候选 artifact 属于较早 attempt 时，自动选择可能失败；检查该运行的实际 artifact 后使用人工恢复，不重新构建或替换候选。
+人工恢复可通过 `workflow_dispatch` 指定该 Release 标签（例如 `gh workflow run npm-release.yml --ref vX.Y.Z -f verification_run=RUN -f artifact=ghship-candidate-N`），也可在 main 仍指向该发行提交时使用 main。恢复入口同样要求当前正式 Latest、匹配提交和最新成功 verification，不得借此发布未验收构件。仅重跑失败作业可能无法证明同一 attempt 覆盖所有平台，此时自动及人工入口均拒绝发布。须完整重跑全部作业并重新验收；若新候选与已发布的 Release 附件不一致，应停止并重新评估发行版本，不得替换已验收构件。
 
 自动校验不能证明人工独立验收的内容；发布 Release 的执行者必须先完成并记录独立验收。由 GitHub Actions 的 `GITHUB_TOKEN` 创建的 Release 一般不会触发其他工作流，需按 GitHub 事件规则使用获授权的发布身份或显式执行人工恢复；不要为绕过该限制保存长期 npm 凭据。
 
