@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -254,5 +256,208 @@ func TestProjectStatusRejectsUnreadableRecords(t *testing.T) {
 				t.Fatalf("%s changed: %v", kind, err)
 			}
 		})
+	}
+}
+
+func TestProjectStatusRejectsSemanticallyCorruptRecords(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	manifest := filepath.Join(root, ".ghship", "install.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []projectManifest{
+		{SchemaVersion: 1, Version: "1.0.0", ReadmeHash: strings.Repeat("z", 64), BlockHash: strings.Repeat("z", 64)},
+		{SchemaVersion: 1, ReadmeHash: strings.Repeat("a", 64), BlockHash: strings.Repeat("b", 64)},
+		{SchemaVersion: 1, Version: "not-a-version", ReadmeHash: strings.Repeat("a", 64), BlockHash: strings.Repeat("b", 64)},
+	} {
+		before, _ := json.Marshal(record)
+		if err := os.WriteFile(manifest, before, 0600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+			t.Errorf("invalid manifest reported valid: %q %v", out.String(), err)
+		}
+		after, err := os.ReadFile(manifest)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatal("manifest changed", err)
+		}
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(binding), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []projectBinding{
+		{SchemaVersion: 1, Root: root, Repo: "a/b/c"},
+		{SchemaVersion: 1, Root: root, Repo: "github.com/fixture/repo", Author: "bad@user", Reviewer: "reviewer", Admin: "admin"},
+		{SchemaVersion: 1, Root: root, Repo: "github.com/fixture/repo", Author: "developer", Reviewer: "Developer", Admin: "admin"},
+	} {
+		before, _ := json.Marshal(record)
+		if err = os.WriteFile(binding, before, 0600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err = project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+			t.Errorf("invalid binding reported valid: %q %v", out.String(), err)
+		}
+		after, e := os.ReadFile(binding)
+		if e != nil || !bytes.Equal(before, after) {
+			t.Fatal("binding changed", e)
+		}
+	}
+}
+
+func TestProjectStatusAcceptsHistoricalAndManagedUserRecords(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	manifest := filepath.Join(root, ".ghship", "install.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	record := projectManifest{SchemaVersion: 1, Version: "1.0.0", ReadmeHash: strings.Repeat("a", 64), BlockHash: strings.Repeat("b", 64)}
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(manifest, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	binding := projectBinding{SchemaVersion: 1, Root: root, Repo: "github.com/fixture/repo", Author: "mona-cat_octo", Reviewer: "reviewer_octo", Admin: "octo_admin"}
+	data, _ = json.Marshal(binding)
+	name, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = atomicConfig(name, data); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err = project([]string{"status", "--project", root, "--json"}, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err = json.Unmarshal(out.Bytes(), &result); err != nil || result["installed"] != true || result["bound"] != true || result["managedFilesUnmodified"] != false {
+		t.Fatalf("historical/managed record: %s %v", out.String(), err)
+	}
+}
+
+func TestProjectStatusRejectsDuplicateRecordFields(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	manifest := filepath.Join(root, ".ghship", "install.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(fmt.Sprintf(`{"schemaVersion":1,"version":"1.0.0","version":"1.0.0","readmeHash":%q,"blockHash":%q,"createdAgents":false}`, strings.Repeat("a", 64), strings.Repeat("b", 64)))
+	if err := os.WriteFile(manifest, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("duplicate manifest field accepted: %q %v", out.String(), err)
+	}
+	after, err := os.ReadFile(manifest)
+	if err != nil || !bytes.Equal(raw, after) {
+		t.Fatal("manifest changed", err)
+	}
+	if err = os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(binding), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw = []byte(fmt.Sprintf(`{"schemaVersion":1,"root":%q,"repo":"github.com/fixture/repo","author":"author","author":"author","reviewer":"reviewer","admin":"admin"}`, root))
+	if err = os.WriteFile(binding, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err = project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("duplicate binding field accepted: %q %v", out.String(), err)
+	}
+	after, err = os.ReadFile(binding)
+	if err != nil || !bytes.Equal(raw, after) {
+		t.Fatal("binding changed", err)
+	}
+}
+
+func TestProjectStatusRejectsMissingRequiredRecordFields(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	manifest := filepath.Join(root, ".ghship", "install.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(fmt.Sprintf(`{"schemaVersion":1,"version":"1.0.0","readmeHash":%q,"blockHash":%q}`, strings.Repeat("a", 64), strings.Repeat("b", 64)))
+	if err := os.WriteFile(manifest, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("missing manifest field accepted: %q %v", out.String(), err)
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(binding), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw = []byte(fmt.Sprintf(`{"schemaVersion":1,"root":%q,"repo":"github.com/fixture/repo","author":"author","reviewer":"reviewer","admin":"admin"}`, root))
+	if err = os.WriteFile(binding, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err = project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("missing binding field accepted: %q %v", out.String(), err)
+	}
+	after, err := os.ReadFile(binding)
+	if err != nil || !bytes.Equal(raw, after) {
+		t.Fatal("binding changed", err)
+	}
+}
+
+func TestProjectStatusRejectsNullRequiredBooleans(t *testing.T) {
+	_, root := fixture(t)
+	setupAuthHome(t)
+	manifest := filepath.Join(root, ".ghship", "install.json")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0755); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(fmt.Sprintf(`{"schemaVersion":1,"version":"1.0.0","readmeHash":%q,"blockHash":%q,"createdAgents":null}`, strings.Repeat("a", 64), strings.Repeat("b", 64)))
+	if err := os.WriteFile(manifest, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("null manifest field accepted: %q %v", out.String(), err)
+	}
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := bindingPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(binding), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw = []byte(fmt.Sprintf(`{"schemaVersion":1,"root":%q,"repo":"github.com/fixture/repo","author":"author","reviewer":"reviewer","admin":"admin","autoCloseConfirmed":null}`, root))
+	if err = os.WriteFile(binding, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err = project([]string{"status", "--project", root, "--json"}, nil, &out); err == nil || out.Len() != 0 {
+		t.Errorf("null binding field accepted: %q %v", out.String(), err)
 	}
 }

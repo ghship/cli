@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -73,7 +74,7 @@ func loadProjectManifest(root string) (projectManifest, error) {
 	if e != nil {
 		return m, e
 	}
-	if e = json.Unmarshal(b, &m); e != nil {
+	if e = decodeProjectRecord(b, &m, "schemaVersion", "version", "readmeHash", "blockHash", "createdAgents"); e != nil {
 		return m, errors.New("invalid project installation manifest")
 	}
 	if m.SchemaVersion != 1 || len(m.ReadmeHash) != 64 || len(m.BlockHash) != 64 {
@@ -145,6 +146,27 @@ func extractBlock(content string) (string, int, int, error) {
 	}
 	end := b + len(agentEnd)
 	return content[a:end], a, end, nil
+}
+
+func validStatusManifest(m projectManifest) bool {
+	if !newerOrEqual(m.Version, m.Version) || len(m.ReadmeHash) != 64 || len(m.BlockHash) != 64 {
+		return false
+	}
+	_, readmeErr := hex.DecodeString(m.ReadmeHash)
+	_, blockErr := hex.DecodeString(m.BlockHash)
+	return readmeErr == nil && blockErr == nil
+}
+
+func validStatusBinding(p projectBinding) bool {
+	repo, err := parseOrigin("https://" + p.Repo)
+	if err != nil || repo != strings.ToLower(p.Repo) {
+		return false
+	}
+	parts := strings.Split(p.Repo, "/")
+	if len(parts) != 3 || !validQueueAuthor(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
+		return false
+	}
+	return validQueueAuthor(p.Author) && validQueueAuthor(p.Reviewer) && validQueueAuthor(p.Admin) && !strings.EqualFold(p.Author, p.Reviewer)
 }
 
 type projectFileConflict struct{ message string }
@@ -337,9 +359,15 @@ func project(args []string, in io.Reader, out io.Writer) error {
 		if me != nil && !os.IsNotExist(me) {
 			return fmt.Errorf("project installation status unavailable: %w", me)
 		}
-		_, be := readBinding(root)
+		if me == nil && !validStatusManifest(m) {
+			return errors.New("project installation status unavailable: invalid manifest contents")
+		}
+		binding, be := readBinding(root)
 		if be != nil && !os.IsNotExist(be) {
 			return fmt.Errorf("project binding status unavailable: %w", be)
+		}
+		if be == nil && !validStatusBinding(binding) {
+			return errors.New("project binding status unavailable: invalid binding contents")
 		}
 		custom, ce := readProjectSkill(root)
 		var owned bool

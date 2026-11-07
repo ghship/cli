@@ -63,7 +63,7 @@ func readBinding(root string) (projectBinding, error) {
 	if e != nil {
 		return p, e
 	}
-	if e = json.Unmarshal(b, &p); e != nil {
+	if e = decodeProjectRecord(b, &p, "schemaVersion", "root", "repo", "author", "reviewer", "admin", "autoCloseConfirmed"); e != nil {
 		return p, e
 	}
 	if p.SchemaVersion != 1 || p.Root != root || len(strings.Split(p.Repo, "/")) != 3 {
