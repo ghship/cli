@@ -47,7 +47,7 @@ ghship user add --user acceptor --token-file /secure/acceptor.json --non-interac
 
 平台调用失败：瞬时故障在原命令上退避重试（有限次数、固定间隔），不更换身份、凭据通道或端点；写请求结果不明先回读确认未生效再重试，禁止盲目重建；有限重试仍失败或权限被拒绝就停止并如实报告。故障判定与完整纪律见 [workflow.md](workflow.md)。
 
-`next --milestone NUMBER --json`读取当前项目origin及绑定作者，自动逐页读取本轮Open Issue与依赖，直到原生hasNextPage=false，不设任务数量上限。全部查询成功后才选择，分页异常、错误或总量变化即失败，不输出部分候选。唯一已指派叶片resume，否则最小编号可领取叶片claim，零写入；父任务不领取。分页不是事务快照，领取前回读具体任务及验收标准、依赖并确认唯一执行者；已指派但阻塞则保全并停放。
+`next --milestone NUMBER --json`读取当前项目origin及绑定作者，自动逐页读取本轮Open Issue与依赖，直到原生hasNextPage=false，不设任务数量上限。全部查询成功后才选择，分页异常、错误或总量变化即失败，不输出部分候选。作者登录名按GitHub大小写不敏感规则匹配；唯一已指派叶片resume，否则最小编号可领取叶片claim，零写入；父任务不领取。分页不是事务快照，领取前回读具体任务及验收标准、依赖并确认唯一执行者；已指派但阻塞则保全并停放。
 
 `next --author LOGIN --json` 的stdin数组模式，必需number/assignees/blockedBy/subIssuesSummary；达到1000条时保守拒绝可能截断的输入，改用自动分页模式，不提供可调上限掩盖截断。原生父任务范围仍由agent递归核实；直接分页入口使用明确的里程碑编号，不能自动跨轮领取。
 
