@@ -97,7 +97,7 @@ function lifecycleFlags(args) {
  const flags=new Set();
  for(let i=1;i<args.length;i++) {
   const arg=args[i];if(arg==='--')break;
-  if(arg==='--help'||arg==='-h'||arg==='--standalone'||arg==='--skill-only')flags.add(arg);
+  if(arg==='--help'||arg==='-h'||arg==='--standalone'||arg==='--skill-only'||arg==='--check')flags.add(arg);
   if(values.has(arg)&&i+1<args.length)i++;
  }
  return flags;
@@ -166,7 +166,7 @@ if(require.main===module) {
   const executable=binaryPath();if(!fs.existsSync(executable))throw new Error('Package missing Go binary; reinstall the package');
   const args=process.argv.slice(2);const action=args[0];
   const flags=lifecycleFlags(args);
-  if(['install','update','uninstall'].includes(action)&&!flags.has('--standalone')&&!flags.has('--skill-only')&&!flags.has('--help')&&!flags.has('-h')){
+  if(['install','update','uninstall'].includes(action)&&!flags.has('--standalone')&&!flags.has('--skill-only')&&!flags.has('--check')&&!flags.has('--help')&&!flags.has('-h')){
    if(action==='update'&&process.env.npm_command!=='exec') {
     const [command,base]=npmCommand();
     const result=spawnSync(command,[...base,'exec','--yes','--package','@ghship/cli@latest','--','ghship',...args],{stdio:'inherit'});

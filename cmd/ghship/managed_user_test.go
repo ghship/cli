@@ -224,3 +224,20 @@ func TestAccountListRejectsExplicitEmptyFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestLifecycleCheckIsReadOnlyForEveryAction(t *testing.T) {
+	dir := installDir(t)
+	for _, action := range []string{"install", "update", "uninstall"} {
+		var out bytes.Buffer
+		err := run([]string{action, "--check", "--dir", dir, "--json"}, nil, &out)
+		var state struct {
+			Managed bool `json:"managed"`
+		}
+		if err != nil || json.Unmarshal(out.Bytes(), &state) != nil || state.Managed {
+			t.Errorf("%s check: %q %v", action, out.String(), err)
+		}
+		if _, err = os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("%s check changed directory: %v", action, err)
+		}
+	}
+}
