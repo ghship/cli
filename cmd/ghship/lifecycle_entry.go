@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) error {
@@ -28,7 +30,7 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			standalone = true
 			life = append(life, s)
 		case "--dir", "--bin-dir":
-			if i+1 == len(args) {
+			if i+1 == len(args) || args[i+1] == "" {
 				return usage(s + " requires a path")
 			}
 			life = append(life, s, args[i+1])
@@ -40,8 +42,17 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 			life = append(life, s)
 			initArgs = append(initArgs, s)
 		default:
+			name := strings.TrimLeft(strings.SplitN(s, "=", 2)[0], "-")
+			valueFlag := map[string]bool{"project": true, "repo": true, "author": true, "reviewer": true, "admin": true, "acceptance-pr": true}[name]
 			initArgs = append(initArgs, s)
+			if valueFlag && !strings.Contains(s, "=") && i+1 < len(args) {
+				i++
+				initArgs = append(initArgs, args[i])
+			}
 		}
+	}
+	if err := validateLifecycleArguments(action, initArgs, skillOnly, userOnly, standalone, check, life); err != nil {
+		return err
 	}
 	if !standalone && !skillOnly && action == "uninstall" {
 		if _, e := io.WriteString(out, "Use npx @ghship/cli@latest "+action+" to manage npm CLI and skill together.\n"); e != nil {
@@ -142,4 +153,41 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 		return nil
 	}
 	return initialize(initArgs, in, out)
+}
+
+// Validate all arguments before reading or changing installation state.
+func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone, check bool, life []string) error {
+	if skillOnly && standalone {
+		return usage("--skill-only cannot be combined with --standalone")
+	}
+	for i := 0; i < len(life); i++ {
+		if life[i] == "--bin-dir" && !standalone {
+			return usage("--bin-dir requires --standalone")
+		}
+		if life[i] == "--dir" || life[i] == "--bin-dir" {
+			i++
+		}
+	}
+	f := flag.NewFlagSet("init", flag.ContinueOnError)
+	f.SetOutput(io.Discard)
+	for _, name := range []string{"project", "repo", "author", "reviewer", "admin"} {
+		f.String(name, "", "")
+	}
+	f.Int("acceptance-pr", 0, "")
+	for _, name := range []string{"configure", "non-interactive", "confirm-auto-close", "remove-binding", "json"} {
+		f.Bool(name, false, "")
+	}
+	if err := f.Parse(initArgs); err != nil || f.NArg() != 0 {
+		return usage("invalid lifecycle arguments; use ghship help install")
+	}
+	invalid := false
+	f.Visit(func(value *flag.Flag) {
+		if value.Name != "json" && (action != "install" || skillOnly || userOnly || check) {
+			invalid = true
+		}
+	})
+	if invalid {
+		return usage("init options require install without --user-only, --skill-only or --check")
+	}
+	return nil
 }

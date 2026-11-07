@@ -58,7 +58,7 @@ func TestImplementedFlagsAreDiscoverable(t *testing.T) {
 	files := map[string]string{
 		"auth.go": userHelp, "user.go": userHelp, "init.go": initHelp,
 		"project.go": projectHelp, "doctor.go": doctorHelp,
-		"install.go": installHelp, "lifecycle_entry.go": installHelp,
+		"install.go": installHelp, "lifecycle_entry.go": installHelp + initHelp,
 		"main.go": help + ghHelp + nextHelp + tidyHelp,
 	}
 	for name, documentation := range files {

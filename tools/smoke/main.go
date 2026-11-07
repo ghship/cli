@@ -358,7 +358,7 @@ func run() error {
 		if e = checkPreserved(); e != nil {
 			return e
 		}
-		if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+		if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--json"); e != nil {
 			return e
 		}
 		if e = checkUninstalled(launcher); e != nil {
@@ -397,7 +397,7 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
-	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--json"); e != nil {
 		return e
 	}
 	if e = checkUninstalled(launcher); e != nil {
@@ -486,7 +486,7 @@ func run() error {
 	if e = checkPreserved(); e != nil {
 		return e
 	}
-	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--json"); e != nil {
 		return e
 	}
 	if e = checkUninstalled(launcher); e != nil {
@@ -544,7 +544,11 @@ func run() error {
 	}
 	fmt.Println("PASS direct npm update from installed launcher")
 	for _, action := range []string{"update", "uninstall"} {
-		b, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--json")
+		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--json"}
+		if action != "uninstall" {
+			args = append(args, "--package-source", tarball)
+		}
+		b, e = npm(args...)
 		if e != nil {
 			return e
 		}
@@ -769,7 +773,7 @@ func run() error {
 		return e
 	}
 	if e = refused(func() ([]byte, error) {
-		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json")
+		return npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--json")
 	}, "Standalone installation exists; uninstall with a separate downloaded executable and --standalone"); e != nil {
 		return fmt.Errorf("npx standalone uninstall: %w", e)
 	}

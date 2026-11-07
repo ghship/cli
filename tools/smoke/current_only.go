@@ -22,7 +22,10 @@ func currentOnlySmoke(tmp, home, tarball string, registry *registry, command fun
 		launcher = filepath.Join(tmp, "global", "node_modules", "@ghship", "cli", "run.cjs")
 	}
 	for _, action := range []string{"install", "update", "uninstall"} {
-		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--json"}
+		args := []string{"exec", "--yes", "--package", tarball, "--", "ghship", action, "--json"}
+		if action != "uninstall" {
+			args = append(args, "--package-source", tarball)
+		}
 		if action == "install" {
 			args = append(args, "--user-only")
 		}
