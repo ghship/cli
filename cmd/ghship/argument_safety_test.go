@@ -33,6 +33,12 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 		{"update", "--standalone", "--dir", dir, "--project", dir},
 		{"install", "--check", "--dir", dir, "--author", "bad@user"},
 		{"install", "--standalone", "--dir", dir, "--author", "bad@user"},
+		{"install", "--standalone", "--dir", dir, "--author", "bad--name"},
+		{"install", "--standalone", "--dir", dir, "--author", "bad-"},
+		{"install", "--standalone", "--dir", dir, "--repo", "github.com/bad owner/repo"},
+		{"install", "--standalone", "--dir", dir, "--repo", "github.com/owner/bad repo"},
+		{"install", "--standalone", "--dir", dir, "--acceptance-pr", "-1"},
+		{"install", "--standalone", "--dir", dir, "--acceptance-pr", "0"},
 		{"install", "--standalone", "--dir", dir, "--author", "Alice", "--reviewer", "alice"},
 		{"install", "--standalone", "--dir", dir, "--remove-binding", "--author", "alice"},
 		{"install", "--standalone", "--dir", dir, "--json=true"},
@@ -49,6 +55,9 @@ func TestLifecycleArgumentsNeverMutateOnHelpOrUsage(t *testing.T) {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Fatalf("%v changed absent installation", args)
 		}
+	}
+	if err := run([]string{"install", "--check", "--dir", dir, "--repo", "github.com/owner-name/repo.Name_2", "--author", "alice-1", "--reviewer", "bob", "--acceptance-pr", "1"}, nil, &bytes.Buffer{}); err != nil {
+		t.Fatalf("valid boundary options rejected: %v", err)
 	}
 	for _, option := range []string{"--project", "--repo", "--author", "--reviewer", "--admin", "--acceptance-pr"} {
 		err := run([]string{"install", "--standalone", "--dir", dir, option, ""}, nil, &bytes.Buffer{})

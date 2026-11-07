@@ -69,6 +69,8 @@ test('npm lifecycle rejects invalid or inapplicable arguments before invoking a 
   for (const args of [
     ['install','--user-only','--project','test'],
     ['install','--acceptance-pr','bad'],
+    ['install','--acceptance-pr','-1'],
+    ['install','--acceptance-pr','0'],
     ...['--project','--repo','--author','--reviewer','--admin','--acceptance-pr'].map(option=>['install',option,'']),
     ['install','--unknown-option'],
     ['update','--project','test'],

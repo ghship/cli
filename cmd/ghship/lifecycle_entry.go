@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -162,6 +164,12 @@ func lifecycleEntry(action string, args []string, in io.Reader, out io.Writer) e
 	return initialize(initArgs, in, out)
 }
 
+var validRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,100}$`)
+
+func validLifecycleLogin(value string) bool {
+	return validLogin.MatchString(value) && !strings.HasSuffix(value, "-") && !strings.Contains(value, "--")
+}
+
 // Validate all arguments before reading or changing installation state.
 func validateLifecycleArguments(action string, initArgs []string, skillOnly, userOnly, standalone bool, life []string) error {
 	if userOnly && action != "install" {
@@ -211,7 +219,7 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 	}
 	for _, name := range []string{"author", "reviewer", "admin"} {
 		value := f.Lookup(name).Value.String()
-		if value != "" && !validLogin.MatchString(value) {
+		if value != "" && !validLifecycleLogin(value) {
 			return usage("invalid " + name + " username")
 		}
 	}
@@ -219,8 +227,20 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 	if author != "" && reviewer != "" && strings.EqualFold(author, reviewer) {
 		return usage("developer and acceptance usernames must differ")
 	}
+	var invalidPR bool
+	f.Visit(func(value *flag.Flag) {
+		if value.Name == "acceptance-pr" {
+			n, err := strconv.Atoi(value.Value.String())
+			invalidPR = err != nil || n <= 0
+		}
+	})
+	if invalidPR {
+		return usage("--acceptance-pr requires a positive PR number")
+	}
 	if repo := f.Lookup("repo").Value.String(); repo != "" {
-		if _, err := parseOrigin("https://" + repo); err != nil {
+		_, err := parseOrigin("https://" + repo)
+		parts := strings.Split(repo, "/")
+		if err != nil || len(parts) != 3 || !validLifecycleLogin(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
 			return usage("invalid repository")
 		}
 	}

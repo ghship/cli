@@ -116,7 +116,7 @@ function lifecycle(executable,args) {
   if(arg==='--user-only'){userOnly=true;continue;}
   if(arg==='--dir'){if(!passed[i+1])throw new Error('--dir requires a path');lifecycleArgs.push(arg,passed[++i]);}
   else if(arg==='--json'||initSwitches.has(arg)){if(arg!=='--json')hasInitOption=true;initArgs.push(arg);}
-  else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<-(1n<<63n)||BigInt(value)>=(1n<<63n)))throw new Error('--acceptance-pr requires an integer');initArgs.push(arg,value);}
+  else if(initValues.has(arg)){if(!passed[i+1])throw new Error(`${arg} requires a value`);hasInitOption=true;const value=passed[++i];if(arg==='--acceptance-pr'&&(!/^[+-]?\d+$/.test(value)||BigInt(value)<=0n||BigInt(value)>=(1n<<63n)))throw new Error('--acceptance-pr requires a positive integer');initArgs.push(arg,value);}
   else throw new Error(`Unknown lifecycle option: ${arg}; use ghship help install`);
  }
  if(userOnly&&action!=='install')throw new Error('--user-only is only valid for install');
