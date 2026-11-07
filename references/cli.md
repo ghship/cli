@@ -43,7 +43,7 @@ ghship user add --user acceptor --token-file /secure/acceptor.json --non-interac
 
 `gh author|reviewer|dispatcher -- GH_ARGUMENTS...`核验当前项目绑定身份后透传。各角色仅由对应执行者使用，换token不等于独立验收；用户名和token不默认指向ghship自身bot。项目配置和秘密均在仓库外。
 
-角色命令必须在目标Git仓库内运行，即使显式设置身份及外部凭据覆盖。受控集成可用`GHSHIP_AUTHOR`/`GHSHIP_REVIEWER`与`GHSHIP_AUTHOR_PAT_FILE`/`GHSHIP_REVIEWER_PAT_FILE`；这些环境路径读取受保护的纯文本凭据，须位于仓库外，与`user --token-file`的导入JSON用途不同。`GHSHIP_DISPATCHER`约束本地gh登录身份；覆盖不会跳过在线身份验证。
+角色命令必须在目标Git仓库内运行，即使显式设置身份及外部凭据覆盖。受控集成可用`GHSHIP_AUTHOR`/`GHSHIP_REVIEWER`与`GHSHIP_AUTHOR_PAT_FILE`/`GHSHIP_REVIEWER_PAT_FILE`；这些环境路径读取受保护的纯文本凭据，须位于仓库外，与`user --token-file`的导入JSON用途不同。`GHSHIP_DISPATCHER`约束本地gh登录身份；角色命令移除环境中的Git覆盖变量；Git全局选项必须指向当前工作区及其Git目录。原生参数仍可能选择其他资源，调用者必须核对操作目标。覆盖不会跳过在线身份验证；已有绑定时origin必须与绑定一致。显式覆盖使用origin的host；未绑定且没有origin时使用github.com。
 
 平台调用失败：瞬时故障在原命令上退避重试（有限次数、固定间隔），不更换身份、凭据通道或端点；写请求结果不明先回读确认未生效再重试，禁止盲目重建；有限重试仍失败或权限被拒绝就停止并如实报告。故障判定与完整纪律见 [workflow.md](workflow.md)。
 

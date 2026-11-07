@@ -37,6 +37,21 @@ func helper(name string) {
 		}
 	}
 	if name == "git" {
+		if strings.Join(args, " ") == "config --get remote.origin.url" || strings.Join(args, " ") == "remote get-url origin" {
+			if os.Getenv("TEST_GIT_ORIGIN_ERROR") == "1" {
+				os.Exit(9)
+			}
+			if os.Getenv("TEST_NO_ORIGIN") == "1" {
+				if args[0] == "config" {
+					os.Exit(1)
+				}
+				os.Exit(2)
+			}
+		}
+		if strings.Join(args, " ") == "config --get remote.origin.url" {
+			fmt.Println(envDefault("TEST_ORIGIN", "https://github.com/fixture/repo.git"))
+			return
+		}
 		if strings.Join(args, " ") == "remote get-url origin" {
 			fmt.Println(envDefault("TEST_ORIGIN", "https://github.com/fixture/repo.git"))
 			return
@@ -207,6 +222,7 @@ func TestHelpAndJSON(t *testing.T) {
 }
 func TestRoles(t *testing.T) {
 	r, _ := fixture(t)
+	setupAuthHome(t)
 	t.Setenv("GHSHIP_AUTHOR", "author")
 	t.Setenv("GHSHIP_DISPATCHER", "dispatcher")
 	token := filepath.Join(r, "token")
@@ -356,6 +372,7 @@ func TestEnterpriseRoleEnvironment(t *testing.T) {
 }
 func TestRoleGitRewritesSSHWithoutGlobalConfiguration(t *testing.T) {
 	_, _ = fixture(t)
+	setupAuthHome(t)
 	t.Setenv("GHSHIP_AUTHOR", "author")
 	p := filepath.Join(t.TempDir(), "token")
 	os.WriteFile(p, []byte("synthetic"), 0600)

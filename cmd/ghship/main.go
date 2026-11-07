@@ -68,10 +68,13 @@ selects the expected identity; no default hardcoded accounts.
 Run inside the target Git repository, including with explicit role overrides.
 Stored author/reviewer credentials are outside Git, Unix protected files or
 Windows current-user DPAPI.
-Dispatcher uses local gh login. Ambient token variables are removed.
+Dispatcher uses local gh login. Ambient token and Git override variables are removed.
 Explicit GHSHIP_AUTHOR/REVIEWER/DISPATCHER and external PAT_FILE overrides are supported
 for controlled integration; verify login before invoking actual native gh command.
-Arguments, streams and gh exit codes preserved. Credentials never printed.
+The origin selects the host and must match any existing project binding. If no
+binding or origin exists, explicit overrides use github.com.
+Arguments, streams and gh exit codes preserved. Native arguments can select other
+resources; the caller checks the intended target. Credentials never printed.
 Each role is used only by that role's authorized executor; account switching is not
 independent acceptance. Git authenticated operations: ghship git author -- push ...
 Examples:
@@ -279,6 +282,66 @@ func output(env []string, name string, a ...string) (string, error) {
 	}
 	return strings.TrimSpace(string(b)), nil
 }
+
+// Resolve a physical working tree before any role identity or native command.
+func currentProjectRoot(env []string) (string, error) {
+	root, err := output(env, "git", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	cwd, err = filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", errors.New("run inside the target Git working tree")
+	}
+	return root, nil
+}
+
+// Absence is allowed only for an unbound override; unreadable configuration
+// must not be silently treated as a missing origin.
+func projectOrigin(env []string) (string, bool, error) {
+	ctx, stop := context.WithTimeout(operationContext, 30*time.Second)
+	defer stop()
+	cmd := exec.CommandContext(ctx, "git", "config", "--get", "remote.origin.url")
+	cmd.Env = env
+	_, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && exit.ExitCode() == 1 && len(exit.Stderr) == 0 {
+			return "", false, nil
+		}
+		return "", false, errors.New("cannot read project origin")
+	}
+	origin, err := output(env, "git", "remote", "get-url", "origin")
+	if err != nil {
+		return "", false, errors.New("cannot resolve project origin")
+	}
+	return origin, true, nil
+}
+
+// Repository discovery and native role commands must use the same target.
+func cleanRoleEnv() []string {
+	var result []string
+	for _, value := range cleanGHEnv() {
+		key, _, _ := strings.Cut(value, "=")
+		if !strings.HasPrefix(strings.ToUpper(key), "GIT_") {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 func roleEnvironment(role string) ([]string, error) {
 	var expected, file string
 	switch role {
@@ -293,33 +356,37 @@ func roleEnvironment(role string) ([]string, error) {
 	default:
 		return nil, usage("unknown role")
 	}
-	env := cleanGHEnv()
+	env := cleanRoleEnv()
+	root, e := currentProjectRoot(env)
+	if e != nil {
+		return nil, e
+	}
 	host := "github.com"
-	if expected == "" {
-		root, e := output(nil, "git", "rev-parse", "--show-toplevel")
-		if e != nil {
-			return nil, e
+	binding, bindErr := readBinding(root)
+	if bindErr != nil && !os.IsNotExist(bindErr) {
+		return nil, errors.New("project role binding invalid or unavailable")
+	}
+	if bindErr != nil && expected == "" {
+		return nil, errors.New("project role binding unavailable; run ghship init")
+	}
+	origin, hasOrigin, originErr := projectOrigin(env)
+	if originErr != nil {
+		return nil, originErr
+	}
+	if !hasOrigin && bindErr == nil {
+		return nil, errors.New("project origin unavailable")
+	}
+	if hasOrigin {
+		repo, err := parseOrigin(origin)
+		if err != nil {
+			return nil, err
 		}
-		root, e = filepath.EvalSymlinks(root)
-		if e != nil {
-			return nil, e
-		}
-		binding, e := readBinding(root)
-		if e != nil {
-			return nil, errors.New("project role binding unavailable; run ghship init")
-		}
-		origin, e := output(nil, "git", "remote", "get-url", "origin")
-		if e != nil {
-			return nil, e
-		}
-		repo, e := parseOrigin(origin)
-		if e != nil {
-			return nil, e
-		}
-		if repo != binding.Repo {
+		if bindErr == nil && repo != binding.Repo {
 			return nil, errors.New("origin differs from project binding")
 		}
-		host = strings.Split(binding.Repo, "/")[0]
+		host = strings.Split(repo, "/")[0]
+	}
+	if expected == "" {
 		switch role {
 		case "author":
 			expected = binding.Author
@@ -329,9 +396,9 @@ func roleEnvironment(role string) ([]string, error) {
 			expected = binding.Admin
 		}
 		if role != "dispatcher" {
-			api, e := accountAPI(host, expected)
-			if e != nil {
-				return nil, e
+			api, err := accountAPI(host, expected)
+			if err != nil {
+				return nil, err
 			}
 			env = append(env, githubTokenEnv(host)+"="+api.token)
 		}
@@ -340,14 +407,6 @@ func roleEnvironment(role string) ([]string, error) {
 	}
 	env = append(env, "GH_HOST="+host)
 	if file != "" {
-		root, e := output(nil, "git", "rev-parse", "--show-toplevel")
-		if e != nil {
-			return nil, e
-		}
-		root, e = filepath.EvalSymlinks(root)
-		if e != nil {
-			return nil, e
-		}
 		file, e = filepath.EvalSymlinks(file)
 		if e != nil {
 			return nil, errors.New("credential unavailable")
@@ -378,7 +437,7 @@ func roleEnvironment(role string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if actor != expected {
+	if !strings.EqualFold(actor, expected) {
 		return nil, fmt.Errorf("wrong identity: expected %s, got %s", expected, actor)
 	}
 	return env, nil
