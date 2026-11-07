@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,6 +19,8 @@ const projectHelp = `ghship project install|status|update|uninstall|skill [OPTIO
 install: same options as init; matching, unmodified managed home skill is required. Adds project instructions,
 managed AGENTS reference and local role binding. Governance changes require a PR.
 status: --project PATH --json. Reports local installation facts, not invented readiness.
+Missing records report absent; corrupt or unreadable records and unsafe paths fail
+without a status result. Changed or missing managed files report unmodified=false.
 update: --project PATH --json. Requires matching, unmodified managed home skill;
 updates only owned, unchanged installation content.
 uninstall: --project PATH [--binding-only] --json. Removes owned project instructions
@@ -71,7 +74,7 @@ func loadProjectManifest(root string) (projectManifest, error) {
 	if e != nil {
 		return m, e
 	}
-	if e = json.Unmarshal(b, &m); e != nil {
+	if e = decodeProjectRecord(b, &m, "schemaVersion", "version", "readmeHash", "blockHash", "createdAgents"); e != nil {
 		return m, errors.New("invalid project installation manifest")
 	}
 	if m.SchemaVersion != 1 || len(m.ReadmeHash) != 64 || len(m.BlockHash) != 64 {
@@ -144,6 +147,32 @@ func extractBlock(content string) (string, int, int, error) {
 	end := b + len(agentEnd)
 	return content[a:end], a, end, nil
 }
+
+func validStatusManifest(m projectManifest) bool {
+	if !newerOrEqual(m.Version, m.Version) || len(m.ReadmeHash) != 64 || len(m.BlockHash) != 64 {
+		return false
+	}
+	_, readmeErr := hex.DecodeString(m.ReadmeHash)
+	_, blockErr := hex.DecodeString(m.BlockHash)
+	return readmeErr == nil && blockErr == nil
+}
+
+func validStatusBinding(p projectBinding) bool {
+	repo, err := parseOrigin("https://" + p.Repo)
+	if err != nil || repo != strings.ToLower(p.Repo) {
+		return false
+	}
+	parts := strings.Split(p.Repo, "/")
+	if len(parts) != 3 || !validQueueAuthor(parts[1]) || !validRepositoryName.MatchString(parts[2]) || parts[2] == "." || parts[2] == ".." {
+		return false
+	}
+	return validQueueAuthor(p.Author) && validQueueAuthor(p.Reviewer) && validQueueAuthor(p.Admin) && !strings.EqualFold(p.Author, p.Reviewer)
+}
+
+type projectFileConflict struct{ message string }
+
+func (e projectFileConflict) Error() string { return e.message }
+
 func validateProjectFiles(root string, m projectManifest) (string, error) {
 	for _, rel := range []string{"AGENTS.md", ".ghship/README.md", ".ghship/install.json"} {
 		if e := noLinks(filepath.Join(root, filepath.FromSlash(rel))); e != nil {
@@ -155,7 +184,7 @@ func validateProjectFiles(root string, m projectManifest) (string, error) {
 		return "", e
 	}
 	if digest(b) != m.ReadmeHash {
-		return "", errors.New("project instructions changed; preserved")
+		return "", projectFileConflict{"project instructions changed; preserved"}
 	}
 	b, e = os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if e != nil {
@@ -163,10 +192,10 @@ func validateProjectFiles(root string, m projectManifest) (string, error) {
 	}
 	block, _, _, e := extractBlock(string(b))
 	if e != nil {
-		return "", e
+		return "", projectFileConflict{e.Error()}
 	}
 	if block == "" || digest([]byte(block)) != m.BlockHash {
-		return "", errors.New("managed AGENTS block changed or missing; preserved")
+		return "", projectFileConflict{"managed AGENTS block changed or missing; preserved"}
 	}
 	return string(b), nil
 }
@@ -327,12 +356,28 @@ func project(args []string, in io.Reader, out io.Writer) error {
 	m, me := loadProjectManifest(root)
 	switch args[0] {
 	case "status":
-		_, be := readBinding(root)
+		if me != nil && !os.IsNotExist(me) {
+			return fmt.Errorf("project installation status unavailable: %w", me)
+		}
+		if me == nil && !validStatusManifest(m) {
+			return errors.New("project installation status unavailable: invalid manifest contents")
+		}
+		binding, be := readBinding(root)
+		if be != nil && !os.IsNotExist(be) {
+			return fmt.Errorf("project binding status unavailable: %w", be)
+		}
+		if be == nil && !validStatusBinding(binding) {
+			return errors.New("project binding status unavailable: invalid binding contents")
+		}
 		custom, ce := readProjectSkill(root)
 		var owned bool
 		if me == nil {
 			_, e = validateProjectFiles(root, m)
 			owned = e == nil
+			var conflict projectFileConflict
+			if e != nil && !os.IsNotExist(e) && !errors.As(e, &conflict) {
+				return fmt.Errorf("project ownership status unavailable: %w", e)
+			}
 		}
 		result := map[string]any{"project": root, "installed": me == nil, "managedFilesUnmodified": owned, "bound": be == nil, "ready": nil, "readiness": "not_checked", "next": []string{"ghship init --project " + root + " --non-interactive --json"}}
 		if ce == nil {
