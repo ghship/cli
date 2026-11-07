@@ -12,7 +12,7 @@ import (
 func TestExternalLifecycleEntryJSONAndDiagnostics(t *testing.T) {
 	for _, action := range []string{"update", "uninstall"} {
 		t.Run(action, func(t *testing.T) {
-			dir := installDir(t)
+			dir := installDir(t) + " path ' $()"
 			for _, jsonMode := range []bool{false, true} {
 				args := []string{action, "--dir", dir}
 				if jsonMode {
@@ -21,15 +21,22 @@ func TestExternalLifecycleEntryJSONAndDiagnostics(t *testing.T) {
 				var out bytes.Buffer
 				err := run(args, nil, &out)
 				var ce cliError
-				if !errors.As(err, &ce) || ce.code != 4 || !strings.Contains(err.Error(), "npx @ghship/cli@latest "+action) {
+				if !errors.As(err, &ce) || ce.code != 4 || !strings.Contains(err.Error(), "npx @ghship/cli@latest "+action) || !strings.Contains(err.Error(), "original installation directory") {
 					t.Fatalf("%v: %v", args, err)
+				}
+				if strings.Contains(err.Error(), dir) {
+					t.Fatal("untrusted path was interpolated in shell guidance")
 				}
 				if jsonMode {
 					var v struct {
-						Ready bool     `json:"ready"`
-						Next  []string `json:"next"`
+						Ready   bool     `json:"ready"`
+						Next    []string `json:"next"`
+						Command struct {
+							Program string   `json:"program"`
+							Args    []string `json:"args"`
+						} `json:"command"`
 					}
-					if e := json.Unmarshal(out.Bytes(), &v); e != nil || v.Ready || len(v.Next) != 1 || v.Next[0] != "npx @ghship/cli@latest "+action {
+					if e := json.Unmarshal(out.Bytes(), &v); e != nil || v.Ready || len(v.Next) != 1 || !strings.Contains(v.Next[0], "original installation directory") || v.Command.Program != "npx" || len(v.Command.Args) != 5 || v.Command.Args[2] != "--dir" || v.Command.Args[3] != dir || v.Command.Args[4] != "--json" {
 						t.Fatalf("invalid JSON %q: %v", out.String(), e)
 					}
 				} else if out.Len() != 0 {

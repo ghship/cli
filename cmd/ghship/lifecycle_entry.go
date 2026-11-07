@@ -243,17 +243,29 @@ func validateLifecycleArguments(action string, initArgs []string, skillOnly, use
 
 // An external entry is a pending state, with machine-readable guidance when requested.
 func externalLifecycleEntry(action string, args []string, out io.Writer) error {
-	next := "npx @ghship/cli@latest " + action
+	commandArgs := []string{"@ghship/cli@latest", action}
+	jsonMode, customDir := false, false
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--dir" || args[i] == "--bin-dir" {
+			if args[i] == "--dir" && i+1 < len(args) {
+				commandArgs = append(commandArgs, "--dir", args[i+1])
+				customDir = true
+			}
 			i++
 			continue
 		}
 		if args[i] == "--json" {
-			if err := emitResult(out, true, map[string]any{"ready": false, "next": []string{next}}); err != nil {
-				return err
-			}
-			break
+			jsonMode = true
+		}
+	}
+	next := "npx @ghship/cli@latest " + action
+	if customDir {
+		next += "; pass the original installation directory with --dir"
+	}
+	if jsonMode {
+		commandArgs = append(commandArgs, "--json")
+		if err := emitResult(out, true, map[string]any{"ready": false, "next": []string{next}, "command": map[string]any{"program": "npx", "args": commandArgs}}); err != nil {
+			return err
 		}
 	}
 	return cliError{4, errors.New("external npm lifecycle entry required; use " + next)}

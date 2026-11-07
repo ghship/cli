@@ -4,7 +4,7 @@
 
 ## 结果与退出
 
-0：本次指定范围完成；1：操作失败；2：参数/必需输入缺失；3：next无候选；4：用户安装完成但项目待配置，或需要外部生命周期入口。`gh`保留原生退出码。JSON stdout是机器结果，诊断stderr；失败时如果没有结果，stdout可以为空。需要外部生命周期入口时，JSON结果的ready为false，并在next提供命令；不得从一条“完成”推断整条产品交付成功。
+0：本次指定范围完成；1：操作失败；2：参数/必需输入缺失；3：next无候选；4：用户安装完成但项目待配置，或需要外部生命周期入口。`gh`保留原生退出码。JSON stdout是机器结果，诊断stderr；失败时如果没有结果，stdout可以为空。需要外部生命周期入口时，JSON结果的ready为false，next提供操作指引，command以program和args保留原始目录及参数；不得从一条“完成”推断整条产品交付成功。
 
 `init`：project/repo/ready/completed/missing/next。缺项必须根据next处理并再次实查。`project status`仅读本地安装事实，ready为null、readiness=not_checked；不能把installed解释成ready。`user list`逐账号显示status/checkedAt/expiresAt/projects，有效不等于全库权限。列表读取规范host目录与账号JSON，忽略并保留无关普通文件；host符号链接拒绝，损坏账号显示unavailable，不隐藏其他正常账号。缺过期日为null，403/网络错误为unknown。
 
