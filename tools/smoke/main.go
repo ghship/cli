@@ -176,6 +176,13 @@ func run() error {
 	if runtime.GOOS == "windows" {
 		launcher = filepath.Join(prefix, "node_modules", "@ghship", "cli", "run.cjs")
 	}
+	invoke := func(a ...string) ([]byte, error) {
+		if runtime.GOOS == "windows" {
+			entry := filepath.Join(tmp, "global", "ghship.cmd")
+			return command("cmd.exe", append([]string{"/d", "/c", entry}, a...)...)
+		}
+		return command(filepath.Join(tmp, "global", "bin", "ghship"), a...)
+	}
 	skillDir := filepath.Join(home, ".agents", "skills", "ghship")
 	standaloneDir := filepath.Join(home, ".local", "bin")
 	if runtime.GOOS == "windows" {
@@ -358,6 +365,44 @@ func run() error {
 		}
 		fmt.Println("PASS real 1.0.2 npm installation to split candidate")
 	}
+	directTar, olderPlatformDir, olderPlatformTar, e := directFixture(pkg, fixtureBinary, tmp, npm)
+	if e != nil {
+		return e
+	}
+	restorePlatform, e := registry.swapPlatform(olderPlatformDir, olderPlatformTar)
+	if e != nil {
+		return e
+	}
+	defer restorePlatform()
+	if b, e = npm("exec", "--yes", "--package", directTar, "--", "ghship", "install", "--package-source", directTar, "--user-only", "--json"); e != nil {
+		return fmt.Errorf("install synthetic direct-update baseline: %w: %s", e, b)
+	}
+	if e = checkNpmVersion("0.0.1"); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, "0.0.1"); e != nil {
+		return e
+	}
+	restorePlatform()
+	if b, e = invoke("update", "--json"); e != nil {
+		return fmt.Errorf("direct npm upgrade from older version: %w: %s", e, b)
+	}
+	if e = checkNpmVersion(assets.Version); e != nil {
+		return e
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if _, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", "uninstall", "--package-source", tarball, "--json"); e != nil {
+		return e
+	}
+	if e = checkUninstalled(launcher); e != nil {
+		return e
+	}
+	fmt.Println("PASS direct npm upgrade from synthetic older split installation")
 	if _, e = npm("exec", "--yes", "--package", fixtureTar, "--", "ghship", "install", "--package-source", fixtureTar, "--user-only", "--json"); e != nil {
 		return e
 	}
@@ -462,13 +507,6 @@ func run() error {
 		if e = checkProject(currentBinary); e != nil {
 			return e
 		}
-	}
-	invoke := func(a ...string) ([]byte, error) {
-		if runtime.GOOS == "windows" {
-			entry := filepath.Join(tmp, "global", "ghship.cmd")
-			return command("cmd.exe", append([]string{"/d", "/c", entry}, a...)...)
-		}
-		return command(filepath.Join(tmp, "global", "bin", "ghship"), a...)
 	}
 	b, e = invoke("version")
 	if e != nil {

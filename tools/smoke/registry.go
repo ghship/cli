@@ -20,6 +20,7 @@ type registry struct {
 	mu           sync.Mutex
 	downloads    map[string]int
 	registerMain func(string, string) error
+	swapPlatform func(string, string) (func(), error)
 }
 
 func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*registry, error) {
@@ -64,6 +65,34 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		packages[name] = item{meta: meta, data: data}
 	}
 	r := &registry{downloads: map[string]int{}}
+	r.swapPlatform = func(dir, archive string) (func(), error) {
+		b, err := os.ReadFile(filepath.Join(dir, "package.json"))
+		if err != nil {
+			return nil, err
+		}
+		var meta map[string]any
+		if err = json.Unmarshal(b, &meta); err != nil {
+			return nil, err
+		}
+		name, ok := meta["name"].(string)
+		if !ok || !strings.HasPrefix(name, "@ghship/cli-") {
+			return nil, fmt.Errorf("invalid platform package")
+		}
+		data, err := os.ReadFile(archive)
+		if err != nil {
+			return nil, err
+		}
+		r.mu.Lock()
+		old, ok := packages[name]
+		if ok {
+			packages[name] = item{meta: meta, data: data}
+		}
+		r.mu.Unlock()
+		if !ok {
+			return nil, fmt.Errorf("unknown platform package")
+		}
+		return func() { r.mu.Lock(); packages[name] = old; r.mu.Unlock() }, nil
+	}
 	r.registerMain = func(dir, archive string) error {
 		metaBytes, err := os.ReadFile(filepath.Join(dir, "package.json"))
 		if err != nil {
