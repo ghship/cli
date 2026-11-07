@@ -11,7 +11,9 @@ persistent CLI, then enters project initialization. `--user-only` stops after us
 installation. Project workflows need Git and a gh with native Issue relationships.
 `ghship doctor` provides official tool installation links when missing.
 
-Update/uninstall via external `npx @ghship/cli@latest update|uninstall`. Project lifecycle:
+Run `ghship update` to update an npm installation through the latest published npm
+package. Alternatively use `npx @ghship/cli@latest update`; uninstall with the
+external entry `npx @ghship/cli@latest uninstall`. Project lifecycle:
 `ghship project install|status|update|uninstall`; custom `.ghship/skill.md` is preserved.
 Install and update also update a verified standalone installation in place, keeping its
 channel and paths. To uninstall a standalone installation, use a separate downloaded

@@ -11,7 +11,7 @@
 ## 用户级与项目级
 
 - npm安装：`npx @ghship/cli@VERSION install [--user-only]`。skill先完成，再安装同版本持久CLI，默认进入init。
-- npm更新/卸载：外部`npx @ghship/cli@VERSION update|uninstall`；普通已安装CLI返回外部入口，不在Windows删除自己。
+- npm 安装的 `ghship update` 通过 npm 运行最新已发布版本；也可用 `npx @ghship/cli@VERSION update` 指定版本。卸载使用外部 `npx @ghship/cli@VERSION uninstall`，不在 Windows 删除运行中的自身。
 - 对已验证的直接下载安装，外部 npm 的 `install` 和 `update` 也可更新 CLI 与 skill，保留原安装渠道和路径；卸载仍使用独立下载的二进制及 `--standalone`。
 - 直接下载：外部下载二进制`install|update|uninstall --standalone [--bin-dir PATH] [--dir PATH]`。
 - 安装默认进入初始化，可同时传入下述init参数；`--user-only`仅完成用户级安装。默认skill目录为`~/.agents/skills/ghship`，自定义目录需在后续更新/卸载时继续传入同一`--dir`。直接下载默认CLI目录为Unix `~/.local/bin`、Windows `%LOCALAPPDATA%/Programs/ghship`，可用`--bin-dir`指定，不自动修改PATH。协调器使用`--skill-only`仅维护内嵌skill，`--check`只检查所有权；两者不代表项目已就绪。

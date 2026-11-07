@@ -33,7 +33,8 @@ use a separate downloaded executable with --standalone for standalone uninstall.
 Updates/uninstalls require managed unchanged files, preserve users/projects,
 refuse symlinks, unknown content and downgrades; stage and recover on failure.
 Windows standalone update/uninstall: run from a separate downloaded executable.
-Npm update/uninstall use an external npx entry; installed Go CLI returns 4.
+The npm-installed ghship update uses npm to run the latest published version.
+Npm uninstall uses an external npx entry; the standalone Go CLI returns 4.
 Install is idempotent for managed installations; unknown destinations preserved.
 Coordinator flags --skill-only and --check are for bundled-skill operations:
 --check validates ownership without writing; neither implies project readiness.

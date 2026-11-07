@@ -38,6 +38,15 @@ func currentOnlySmoke(tmp, home, tarball string, registry *registry, command fun
 			if err = verifyInstalledSkill(home, assets.Version); err != nil {
 				return err
 			}
+			if action == "install" {
+				output, err := command("node", launcher, "update", "--json")
+				if err != nil {
+					return fmt.Errorf("direct npm current update: %w: %s", err, output)
+				}
+				if err = verifyInstalledSkill(home, assets.Version); err != nil {
+					return err
+				}
+			}
 		} else if _, err := os.Stat(launcher); !os.IsNotExist(err) {
 			return fmt.Errorf("npm launcher remains")
 		}

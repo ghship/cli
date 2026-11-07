@@ -96,6 +96,9 @@ func run() error {
 	if tarball == "" {
 		tarball = filepath.Join(tmp, pack.Filename)
 	}
+	if e = registry.registerMain(pkg, tarball); e != nil {
+		return e
+	}
 	if os.Getenv("GHSHIP_SMOKE_CURRENT_ONLY") == "1" {
 		return currentOnlySmoke(tmp, home, tarball, registry, command, npm)
 	}
@@ -460,12 +463,47 @@ func run() error {
 			return e
 		}
 	}
-	invoke := func(a ...string) ([]byte, error) { return command("node", append([]string{launcher}, a...)...) }
+	invoke := func(a ...string) ([]byte, error) {
+		if runtime.GOOS == "windows" {
+			entry := filepath.Join(tmp, "global", "ghship.cmd")
+			return command("cmd.exe", "/d", "/s", "/c", `"`+entry+`" `+strings.Join(a, " "))
+		}
+		return command(filepath.Join(tmp, "global", "bin", "ghship"), a...)
+	}
 	b, e = invoke("version")
 	if e != nil {
 		return e
 	}
 	fmt.Printf("PASS npm version: %s", b)
+	if b, e = invoke("update", "--json"); e != nil {
+		return fmt.Errorf("direct npm update: %w: %s", e, b)
+	}
+	if e = verifyInstalledSkill(home, assets.Version); e != nil {
+		return e
+	}
+	if e = checkPreserved(); e != nil {
+		return e
+	}
+	if e = testSkillConflicts(func() ([]byte, error) { return invoke("update", "--json") }); e != nil {
+		return fmt.Errorf("direct npm update conflict: %w", e)
+	}
+	failNpm := filepath.Join(tmp, "fail-npm.cjs")
+	if e = os.WriteFile(failNpm, []byte("console.error('simulated npm failure');process.exit(7);"), 0o644); e != nil {
+		return e
+	}
+	beforeFailure, e := snapshotTrees(protected...)
+	if e != nil {
+		return e
+	}
+	failedEnv := append(append([]string{}, env...), "npm_execpath="+failNpm)
+	failedOutput, failedErr := runCommand(failedEnv, "node", launcher, "update", "--json")
+	if e = expectRefusal(failedOutput, failedErr, 7, "simulated npm failure"); e != nil {
+		return e
+	}
+	if e = unchangedTrees(beforeFailure, protected...); e != nil {
+		return e
+	}
+	fmt.Println("PASS direct npm update from installed launcher")
 	for _, action := range []string{"update", "uninstall"} {
 		b, e = npm("exec", "--yes", "--package", tarball, "--", "ghship", action, "--package-source", tarball, "--json")
 		if e != nil {

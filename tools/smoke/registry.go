@@ -16,9 +16,10 @@ import (
 // registry serves only the exact local platform tarballs. It records every
 // tarball request so the test can distinguish metadata from binary downloads.
 type registry struct {
-	server    *httptest.Server
-	mu        sync.Mutex
-	downloads map[string]int
+	server       *httptest.Server
+	mu           sync.Mutex
+	downloads    map[string]int
+	registerMain func(string, string) error
 }
 
 func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*registry, error) {
@@ -63,23 +64,52 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		packages[name] = item{meta: meta, data: data}
 	}
 	r := &registry{downloads: map[string]int{}}
+	r.registerMain = func(dir, archive string) error {
+		metaBytes, err := os.ReadFile(filepath.Join(dir, "package.json"))
+		if err != nil {
+			return err
+		}
+		var meta map[string]any
+		if err = json.Unmarshal(metaBytes, &meta); err != nil {
+			return err
+		}
+		if meta["name"] != "@ghship/cli" {
+			return fmt.Errorf("invalid main package")
+		}
+		data, err := os.ReadFile(archive)
+		if err != nil {
+			return err
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		packages["@ghship/cli"] = item{meta: meta, data: data}
+		return nil
+	}
 	r.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		name := strings.TrimPrefix(req.URL.Path, "/")
 		if strings.HasPrefix(name, "tarballs/") {
-			name = "@ghship/cli-" + strings.TrimSuffix(strings.TrimPrefix(name, "tarballs/"), ".tgz")
+			target := strings.TrimSuffix(strings.TrimPrefix(name, "tarballs/"), ".tgz")
+			name = "@ghship/cli-" + target
+			if target == "main" {
+				name = "@ghship/cli"
+			}
+			r.mu.Lock()
 			item, ok := packages[name]
+			if ok && name != "@ghship/cli" {
+				r.downloads[name]++
+			}
+			r.mu.Unlock()
 			if !ok {
 				http.NotFound(w, req)
 				return
 			}
-			r.mu.Lock()
-			r.downloads[name]++
-			r.mu.Unlock()
 			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(item.data)
 			return
 		}
+		r.mu.Lock()
 		item, ok := packages[name]
+		r.mu.Unlock()
 		if !ok {
 			http.NotFound(w, req)
 			return
@@ -90,7 +120,11 @@ func startRegistry(root, tmp string, npm func(...string) ([]byte, error)) (*regi
 		}
 		version := meta["version"].(string)
 		sum := sha512.Sum512(item.data)
-		meta["dist"] = map[string]string{"tarball": r.server.URL + "/tarballs/" + strings.TrimPrefix(name, "@ghship/cli-") + ".tgz", "integrity": "sha512-" + base64.StdEncoding.EncodeToString(sum[:])}
+		target := strings.TrimPrefix(name, "@ghship/cli-")
+		if name == "@ghship/cli" {
+			target = "main"
+		}
+		meta["dist"] = map[string]string{"tarball": r.server.URL + "/tarballs/" + target + ".tgz", "integrity": "sha512-" + base64.StdEncoding.EncodeToString(sum[:])}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": name, "dist-tags": map[string]string{"latest": version}, "versions": map[string]any{version: meta}})
 	}))
