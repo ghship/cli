@@ -17,7 +17,8 @@ Run inside the target Git working tree; an existing binding must match origin.
 Explicit overrides use the origin host, or github.com if unbound without origin.
 Ambient Git override variables are removed; Git global options must keep the
 same worktree and Git directory. Native commands can still address other resources;
-the caller checks the intended operation.
+the caller checks the intended operation. Native Git output is unfiltered and may
+contain sensitive data.
 Use git directly for local operations; use this for authenticated push/fetch.
 Example: ghship git author -- push -u origin HEAD
 `
